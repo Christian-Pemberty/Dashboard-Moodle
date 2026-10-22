@@ -677,3 +677,243 @@ use `confirm_send` SOLO como botón del modal y otra clave para el mensaje).
   teacher/editingteacher/manager).
 - **Código sin commitear al final de cada paso:** hacer commit incremental (ya se hizo uno de
   esta sesión con el backend nuevo; repetir el patrón en cada paso).
+
+## 12. Punto de corte — sesión 22-oct-2026 (Paso 3 — Deploy de backend)
+
+**Estado: backend DESPLEGADO, VERIFICADO EN BD Y CON SMOKE TEST CLI PASS (ver §13).**
+Se corrigió en el camino un bug real de SQL en `get_grades_mail_history` (LIMIT/OFFSET
+con parámetros nombrados → error de sintaxis en MariaDB/mysqli).
+
+| # | Tarea | Estado |
+| --- | --- | --- |
+| 0 | Verificar servidor (§11.6) + decisiones §11.7 | ✅ |
+| 1 | Strings ES/PT (+37 c/u) y EN listo | ✅ (local) |
+| 2 | `enviarnotas.php` `$gmkeys[]` 24 → 59 claves | ✅ (local) |
+| 2b | Bug latente `lang/en` L2200 (`gradesmail_confirm_passnote` sin `;`) | ✅ corregido |
+| — | `php -l` OK (external.php, services.php, version.php, 3×lang, external.php de clases) | ✅ |
+| 3 | **Deploy** `classes/external.php` + `db/services.php` + `version.php` (2026102201) a `moodle_app` | ✅ |
+| 3 | Upgrade del plugin ejecutada (`2026102201: éxito`) | ✅ |
+| 3 | **Verificación BD**: versión + los 2 WS en `mdl_external_functions` | ✅ PASS/PASS |
+| 3 | **Smoke test** de los 2 WS con curso de prueba (id 2) | ✅ **PASS/PASS vía ruta (a) CLI — ver §13** (hallazgos nuevos: no existe la función global `call_external_function` en Moodle 5 + **bug real corregido** en `get_grades_mail_history`) |
+
+### 12.1 Qué se subió y cómo quedó en el servidor
+
+- **Solo 3 archivos** (los de backend), vía `Set-SCPItem` → `/tmp` (host) → `docker cp` →
+  `moodle_app:/bitnami/moodle/blocks/mwa_dashboard/` (rutas finales
+  `classes/external.php` 154,973 B · `db/services.php` 7,191 B · `version.php` 1,153 B).
+- Ownership final: **`1000:1000`** (intento de `chown 1001:0` no quedó aplicado; da igual:
+  modos 644/664 → httpd (uid **1001**) los lee igual). Archivo original del bloque:
+  `block_mwa_dashboard.php` = `1001:0`.
+- Verificación por grep dentro del contenedor: `function get_grades_send_options` = **3**,
+  `function get_grades_mail_history` = **3** (método + `_parameters` + `_returns`),
+  `block_mwa_dashboard_get_grades_send_options` en `services.php` = 1, …`_mail_history` = 1,
+  `version.php` = `2026102201`.
+- **NO se subió**: `lang/es`, `lang/pt_br`, `enviarnotas.php`, `amd/*`, `styles/*` (siguen V1
+  en producción). Riesgo conocido `confirm_send` (§11.3 ⚠️) → resolverlo en el Paso 4 junto
+  con el JS nuevo.
+
+### 12.2 Upgrade del plugin (Moodle 5.0.1 CLI)
+
+Comando que funciona (desde el host, vía SSH):
+
+```bash
+docker exec moodle_app sh -c "cd /bitnami/moodle && php admin/cli/upgrade.php --non-interactive"
+```
+
+- ❌ `-n` / `-v` ya **no existen** en Moodle 5 → `Opciones no reconocidas` (usar
+  `--non-interactive`; `-nv` juntado tampoco).
+- ❌ `-u moodle` **no existe** usuario `moodle` en el contenedor (`unable to find user moodle`).
+  El usuario web es **uid 1001** (httpd de Bitnami). La CLI corre bien como root (default).
+- Salida clave (español): `-->block_mwa_dashboard` · `++ 2026102201: éxito (0,01 segundos) ++` ·
+  `Actualización a través de línea de comandos desde 5.0.1 (Build: 20250609) (2025041401) …
+  finalizada con éxito`.
+- PHP CLI del contenedor: `/opt/bitnami/php/bin/php` **8.2.29**, módulos `mysqli mysqlnd PDO
+  pdo_mysql pdo_sqlite`. php.ini: `/opt/bitnami/php/lib/php.ini`, `conf.d` vacío.
+  ⚠️ No hay php CLI en el host (confirmado de nuevo).
+
+### 12.3 Verificación en BD (resultado definitivo — script en Moodle CLI)
+
+Resultado real (script `p3_final*.php` ejecutado dentro de `moodle_app`):
+
+```
+== config_plugins: plugin=block_mwa_dashboard ==
+ - name=version value=2026102201
+version_registrada='2026102201'
+== external_functions block_mwa_dashboard_* ==
+ … 18 funciones del bloque (incluye get_grades_mail_preview y send_grades_mail) …
+ -- requisitos del Paso 3 --
+PASS  block_mwa_dashboard_get_grades_send_options
+PASS  block_mwa_dashboard_get_grades_mail_history
+== cursos candidatos ('Prueba') ==
+id=2 short=PRUEBA-RA full=Aula de Prueba - Medición de Resultados de Aprendizaje
+```
+
+**Receta definitiva de BD (usar en adelante, reemplaza §11.6.2):**
+
+- ❌ **No usar PDO puro**: el DSN `mariadb:` falla con `could not find driver`
+  (PHP 8.2/pdo_mysql solo acepta prefijo `mysql:`), y aun mapeando a `mysql:` el login crudo
+  con las credenciales extraídas de `config.php` dio
+  `Access denied for user 'moodle_user'@'192.168.25.4'`.
+- ❌ **No usar `capsu_mysql`** para diagnosticar Moodle: ese MySQL **no es la BD de Moodle**
+  (usuarios: `capsu_user@%`, `root` — **no existe `moodle_user`**).
+- ✅ **Usar el bootstrap de Moodle**: CLI script `define('CLI_SCRIPT', true);
+  chdir('/bitnami/moodle'); require('/bitnami/moodle/config.php');` → `$DB->get_records...`.
+  Subir el script con el mismo patrón SCP + `docker cp` + `docker exec moodle_app php /tmp/...`.
+
+**Esquema de Moodle 5.0.1 (diferente a lo asumido en §11.6.2):**
+
+- ❌ **NO existe la tabla `mdl_plugin`** → la versión del plugin está en
+  **`config_plugins`** (columnas `id, plugin, name, value`):
+  `WHERE plugin='block_mwa_dashboard' AND name='version'`.
+- ✅ La tabla **SÍ se llama `mdl_external_functions`** (el usuario tenía razón; en §11.6.2
+  estaba escrito mal `mdl_externalfunctions`). **Sin columna `type`**; columnas útiles
+  `name, disabled, crontabid, readonly`.
+- `get_records()` / `get_records_sql()` devuelven **objetos `stdClass`** → `$r->name`, no
+  `$r['name']` (si no: `Cannot use object of type stdClass as array`).
+
+### 12.4 ⚠️ Pendiente del Paso 3: smoke test HTTP de los 2 WS
+
+Intentos fallidos (documentados para no repetirlos):
+
+1. **Token móvil** `POST /login/token/services.php/json/moodle_mobile_app` → **404**
+   (servicio de token deshabilitado en el sitio).
+2. **Login por sesión + curl** (`POST /login/index.php` con cookies jar) → redirige a
+   `login/index.php?loginredirect=1` y muestra **"Acceso inválido. Por favor, intente otro"**
+   → **la autenticación por curl fue rechazada** (la clave dada es la correcta en el navegador).
+   Posibles causes a investigar: protección anti-bot/Cloudflare en el POST, 2FA, o falta de
+   algún campo/referer. Dato útil: en la página de login el `sesskey` **NO** está en un input
+   oculto, está en el JSON de config (`"sesskey":"W3K6QpYzCX"`).
+3. El endpoint AJAX correcto para llamar WS con sesión es
+   `/webservice/ajax/service.php?sesskey=<key>` con **body = array JSON**
+   `[{"name":"…","args":{…}}, …]` (guionete en `p3_ws_smoke.ps1`, ya preparado con este
+   formato; solo falta loguearse).
+
+**Rutas para retomar (por orden de recomendación):**
+
+- **(a) Smoke test por CLI (recomendado, no depende de HTTP):** script dentro de
+  `moodle_app` con `CLI_SCRIPT` + `config.php`, `$USER = get_admin()` y luego
+  `call_external_function('block_mwa_dashboard_get_grades_send_options', ['courseid'=>2,'groupid'=>0])`
+  y `call_external_function('block_mwa_dashboard_get_grades_mail_history', ['courseid'=>2,'status'=>'','groupid'=>0,'limit'=>5,'offset'=>0])`
+  (importar `lib/externallib.php`) → `var_export` de la respuesta. Es el mismo código de los WS
+  (parámetros + lógica + capabilities con admin) sin la capa HTTP.
+- **(b) Arreglar el login por curl** (UA de navegador + Referer, o probar admin/clave
+  manualmente en el navegador para descartar 2FA) y reusar `p3_ws_smoke.ps1`.
+- **(c) Validar en el E2E real del Paso 4** (el JS de la página llamará exactamente estos 2
+  WS).
+
+### 12.5 Hallazgos de entorno de esta sesión (NO perder)
+
+| Hallazgo | Detalle |
+| --- | --- |
+| PowerShell/Posh-SSH | `Import-Module Posh-SSH` falla con el policy default (error de `.ps1xml`) → correr `powershell -NoProfile -ExecutionPolicy Bypass -File <script>`; el módulo **no se auto-importa** en la sesión del harness |
+| `Set-SCPItem` v4.0 | **NO acepta array en `-Path`** (`CannotConvertArgument`) → iterar archivo por archivo |
+| `Set-SCPItem` overwrite | **NO sobrescribe** el archivo remoto existente (comprobado: el host dejó el archivo viejo 2017 B con timestamp antiguo) → usar **nombre remoto nuevo en cada subida** (patrón `p3_*_vN.php`) |
+| `rm` en `/tmp` del host | Los archivos SCP creados **no se pueden borrar** como `proyectosmym` (`Operation not permitted`) → limpieza pendiente (§12.6); dentro del contenedor `rm -f` funciona |
+| Escape en PowerShell | `\` como continuación es bash (no PS); `\"` tampoco funciona → comandos en **una línea** o archivos `.ps1`/`.sh` subidos |
+| Docker | `docker exec` sin `-u` = root (funciona); **usuario `moodle` no existe**; web = uid **1001**; owner original del plugin = `1000:1000` o `1001:0` (mixto, da igual por 644) |
+| Moodle 5 CLI | `admin/cli/upgrade.php --non-interactive` (sin `-n/-v`); salida en español |
+| Moodle 5 esquema | Sin `mdl_plugin` → versiones en `config_plugins`; `mdl_external_functions` sin columna `type`; filas como `stdClass` |
+| BD real | `192.168.25.7` / `moodle_db` / `moodle_user`; **`capsu_mysql` NO es la BD de Moodle**; PDO crudo no sirve (§12.3) |
+| Moodle CLI PHP | `/opt/bitnami/php/bin/php` 8.2.29 con `pdo_mysql` cargado |
+| Sitio | Servicio de tokens WS móvil **404**; login por curl **rechazado**; `sesskey` en JSON de la página login |
+| Curso de prueba | **id=2** · shortname `PRUEBA-RA` · "Aula de Prueba - Medición de Resultados de Aprendizaje" ✅ (existe y coincide) |
+
+### 12.6 Limpieza pendiente (al retomar)
+
+- Host `192.168.25.4` `/tmp/`: `p3_probe.php`, `p3_probe_v2..v4.php`, `p3_probe_v*.php`,
+  `p3_diag_v1.sh`, `p3_grants_v1.sh`, `p3_tables_v1.php`, `p3_final_v*.php`, `p3_body.json`
+  → borrar (probablemente requiera root: `sudo rm -f /tmp/p3_*` o desde otra sesión).
+- Contenedor `moodle_app:/tmp/` → ya limpio (`rm -f` OK en todos los runs).
+- **NO dejar** scripts temporales dentro de `blocks/mwa_dashboard/` (no se subió ninguno).
+- Local: scripts `p3_*.ps1/.php/.sh` en `C:\Users\Christian\AppData\Local\Temp\opencode\`
+  (reusables; `p3_ws_smoke.ps1` y `p3_final.php` sirven para retomar).
+
+### 12.7 Próximos pasos (orden exacto al retomar la próxima sesión)
+
+1. **Terminar Paso 3**: smoke test de los 2 WS por ruta (a) CLI recomendada (§12.4) sobre el
+   curso id 2. *(usuario confirma)*
+2. **Paso 4 — Frontend "Enviar notas"**: reescribir `amd/src/enviarnotas.js` (tabs, select de
+   actividad, passmark, filtros 🟢🔴🟡+Todos, búsqueda, columna Resultado, modal centrado),
+   regenerar `.min.js`, ampliar `styles/gradesmail.css`, **subir junto con `lang/es` +
+   `lang/pt_br` + `enviarnotas.php` (59 claves)** → probar en curso id 2. *(usuario confirma)*
+   > Nota: al subir la lang nueva, `gradesmail_confirm_send` pasa a `Send now` (label del
+   > modal) — subir lang + JS nuevo **juntos** para no romper la confirmación (§11.3 ⚠️).
+3. **Paso 5 — Pestaña "Historial"** (`get_grades_mail_history` → tabla, filtro, cargar más).
+4. **Paso 6 — Modales** (confirm/alert centrados).
+5. **Paso 7 — Cierre**: `php -l` + `node --check`, commit Git incremental, update de este plan.
+
+---
+
+## 13. Punto de corte — sesión 22-oct-2026 (Paso 3 CERRADO: smoke test CLI PASS)
+
+**Estado: PASS/PASS en los 2 WS sobre curso id 2**, usando la ruta (a) recomendada
+(§12.4): invocar directamente el método estático público del WS con `$USER = get_admin()`
+dentro de `moodle_app`. Además, el smoke test **descubrió y forzó a corregir un bug real**
+de `get_grades_mail_history` (LIMIT/OFFSET con parámetros nombrados → error de sintaxis
+MariaDB). Verificación final con sha256 de `classes/external.php` = local.
+
+> **Decisión de diseño (reutilizar en adelante):** en Moodle 5 **NO existe** la función
+> global `call_external_function()` (la receta literal de §12.4(a) falla). El equivalente
+> funcional de "llamar un WS sin la capa HTTP" es invocar el método estático público de la
+> clase del WS directamente (mismo `validate_parameters` + lógica + capabilities):
+> `\block_mwa_dashboard\external::get_grades_send_options(2, 0)`.
+> `core\external\external_api::call_external_function()` **sí existe** pero exige sesión
+> web (isloggedin + sesskey), por lo que **NO sirve para CLI**.
+
+### 13.1 Resultados (curso id 2 — PRUEBA-RA)
+
+- [x] **`get_grades_send_options {courseid:2, groupid:0}`** → PASS. Devuelve
+      `activities:[{seq:1, cmid:2, name:"Prueba funcional - Momento 1 RA", modname:"quiz",
+      grademax:10, passmark:6, hascustompassmark:true}]`. (passmark explícito 6/10, no el
+      fallback 50%).
+- [x] **`get_grades_mail_history {courseid:2, status:"", groupid:0, limit:5, offset:0}`**
+      → PASS. `total:9`, 5 entradas con campos correctos (`date`, `time`, `teachername`,
+      `studentname`, `status:"sent"`, `send_type:"both"`, `subject`, `moodlelinked:true`).
+- [x] **Contexto `get_grades` (WS existente)**: 7 estudiantes matriculados (3 con nota: 7, 3,
+      y una; 1 sin nota), 1 actividad gradeable (seq 1 = act_1) — **alineado con el `seq`**
+      del WS de opciones.
+- (Los criterios runtime de `send_grades_mail` y `get_grades_mail_preview` quedan cubiertos
+      por la E2E real del Paso 4, ya que el JS nuevo llamará exactamente esos WS.)
+
+### 13.2 Bug real corregido (fuerza a actualizar el backend desplegado)
+
+- **Síntoma:** `get_grades_mail_history` → `dml_read_exception: … syntax … near ''5' OFFSET '0''`.
+- **Causa:** `get_records_sql('… LIMIT :lim OFFSET :off', …)` — el driver mysqli cita los
+  parámetros LIMIT/OFFSET como cadenas y MariaDB rechaza `'OFFSET '0''`.
+- **Fix (aplicado en `classes/external.php`, ~L1369):** inline de enteros validados
+  (`' LIMIT ' . $limit . ' OFFSET ' . $offset`, `$limit`/`$offset` ya son int) + comentario
+  `// NOTE: LIMIT-OFFSET…` explicando el porqué. Regla para el plugin: **nunca** usar
+  parámetros nombrados en `LIMIT`/`OFFSET`.
+- **Verificado:** `php -l` OK; redeployado al servidor y **sha256 del servidor = local**
+  (`5e9513a8…bee21b`); smoke test de `get_grades_mail_history` pasó tras el fix (fallaba antes).
+- **Importante:** esto es un **cambio de backend real** sobre la v1 desplegada (v1 no tenía
+  estos WS). El servidor ahora tiene `external.php` con el fix (sha256 confirmado);
+  `services.php`/`version.php` ya estaban en 2026102201.
+
+### 13.3 Limpieza adicional (sumar a §12.6)
+
+- Host `/tmp`: quedaron `p3_smoke_ws_v2.php`, `p3_ext_fix_v1.php` (y versiones previas)
+  → `rm` como `proyectosmym` → **Operation not permitted** (mismo que §12.6; borrar como
+  root: `sudo rm -f /tmp/p3_*`).
+- Contenedor `moodle_app:/tmp`: `p3_smoke_ws_v1.php` NO se pudo borrar como uid
+  (sticky-bit) → borrar con `docker exec -u root moodle_app rm -f`.
+
+### 13.4 Hallazgos de entorno adicionales (adicionar a §12.5)
+
+| Hallazgo | Detalle |
+| --- | --- |
+| Moodle 5 sin `call_external_function()` global | Ruta CLI recomendada (y usada): método estático público de la clase del WS + `global $USER; $USER = get_admin();`. `core\external\external_api::call_external_function()` exige sesión web → no sirve CLI |
+| `docker exec` sin `-u` = uid 1001 | No puede borrar archivos de otros usuarios en `/tmp` (sticky-bit) → usar `docker exec -u root` para `rm` |
+| PowerShell: `"` dentro de string `"…"` | Se escapa con backtick `` `" ``, **no** con `\` (un `\` es carácter literal en PS) |
+| Bug mysqli LIMIT/OFFSET | Parámetros nombrados citados como string → error MariaDB. Usar enteros inline validados |
+| Curso id 2 (datos reales) | 7 estudiantes, 1 quiz gradeable (cmid 2, máx 10, pass 6), 9 envíos históricos de auditoría |
+
+### 13.5 Siguiente — Paso 4 (frontend «Enviar notas»)
+
+Reescribir `amd/src/enviarnotas.js` (tabs Enviar/Historial, select de actividad, campo
+passmark, filtros 🟢🔴🟡+Todos, búsqueda, columna Resultado, modal centrado), regenerar
+`.min.js`, ampliar `styles/gradesmail.css`, **subir junto con `lang/es` + `lang/pt_br` +
+`enviarnotas.php` (59 claves)** → probar en curso id 2.
+⚠️ No separar la subida de lang del JS: `gradesmail_confirm_send` pasa a `Send now`
+(label del modal) y el JS viejo la usaba como texto de `window.confirm` (§11.3 ⚠️).
+

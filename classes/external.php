@@ -1366,7 +1366,10 @@ class external extends \external_api {
         $total = (int)$DB->count_records_sql('SELECT COUNT(*) FROM (' . $sql . ') tmwa', $sqlparams);
 
         $sql .= ' ORDER BY m.timesent DESC, m.id DESC';
-        $rows = $DB->get_records_sql($sql . ' LIMIT :lim OFFSET :off', $sqlparams + ['lim' => $limit, 'off' => $offset]);
+        // NOTE: LIMIT/OFFSET must be inlined int literals (not named params).
+        // The mysqli driver quotes param values as strings and MariaDB rejects
+        // 'LIMIT '5' OFFSET '0''; $limit/$offset are validated ints above.
+        $rows = $DB->get_records_sql($sql . ' LIMIT ' . $limit . ' OFFSET ' . $offset, $sqlparams);
 
         $fmt = get_config('core', 'fullnameformat');
         $fmt = ($fmt === 'lastname_firstname') ? 'lf' : 'fl';
