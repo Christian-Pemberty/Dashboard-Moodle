@@ -1,0 +1,277 @@
+/* This file is part of Moodle - http://moodle.org/
+ *
+ * Moodle is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Moodle is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/* "Enviar notas" page (blocks/mwa_dashboard/enviarnotas.php). */
+
+.mwa-gm-wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    color: #1f2937;
+}
+
+.mwa-gm-card {
+    background: #fff;
+    border: 1px solid #e3e8ee;
+    border-radius: .75rem;
+    box-shadow: 0 1px 4px rgba(15, 35, 60, .06);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.mwa-gm-card h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.mwa-gm-cardhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: .5rem .75rem;
+    margin-bottom: .5rem;
+}
+
+.mwa-gm-count {
+    font-size: .85rem;
+    color: #495057;
+    font-weight: 600;
+}
+
+.mwa-gm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-bottom: .75rem;
+}
+
+.mwa-gm-actions-end {
+    margin: 1rem 0;
+}
+
+.mwa-gm-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: .5rem;
+    padding: .5rem .9rem;
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mwa-gm-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.mwa-gm-btn-primary {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    color: #fff;
+}
+
+.mwa-gm-btn-primary:hover:not(:disabled) {
+    background: #0b5ed7;
+}
+
+.mwa-gm-btn-sec {
+    background: #fff;
+    border-color: #cbd5e1;
+    color: #334155;
+}
+
+.mwa-gm-btn-sec:hover:not(:disabled) {
+    background: #f1f5f9;
+}
+
+.mwa-gm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .9rem;
+}
+
+.mwa-gm-table th {
+    text-align: left;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #64748b;
+    border-bottom: 2px solid #e3e8ee;
+    padding: .4rem .5rem;
+}
+
+.mwa-gm-table td {
+    padding: .5rem;
+    border-bottom: 1px solid #eef2f7;
+    vertical-align: middle;
+}
+
+.mwa-gm-table .num,
+.mwa-gm-table th.num {
+    text-align: right;
+}
+
+.mwa-gm-check {
+    width: 2.2rem;
+}
+
+.mwa-gm-checkbox {
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+}
+
+.mwa-gm-empty {
+    color: #495057;
+    font-size: .9rem;
+    margin: .25rem 0 0;
+}
+
+.mwa-gm-nograde {
+    color: #64748b;
+    font-style: italic;
+}
+
+.mwa-gm-label {
+    display: block;
+    font-weight: 600;
+    font-size: .9rem;
+    color: #1f2937;
+    margin-bottom: .35rem;
+}
+
+.mwa-gm-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 4.5rem;
+    padding: .5rem .65rem;
+    border: 1px solid #cbd5e1;
+    border-radius: .5rem;
+    font: inherit;
+    font-size: .9rem;
+    color: #1f2937;
+    resize: vertical;
+}
+
+.mwa-gm-btn:focus,
+.mwa-gm-checkbox:focus,
+.mwa-gm-textarea:focus {
+    outline: 2px solid #9ec5fe;
+    outline-offset: 1px;
+}
+
+.mwa-gm-error {
+    background: #fdecec;
+    border: 1px solid #f5c2c7;
+    color: #b02a37;
+    border-radius: .5rem;
+    padding: .5rem .75rem;
+    font-size: .9rem;
+    margin-bottom: 1rem;
+}
+
+.mwa-gm-student {
+    font-size: .85rem;
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+.mwa-gm-subjline {
+    font-size: .9rem;
+    color: #495057;
+    margin-bottom: .5rem;
+    word-break: break-word;
+}
+
+.mwa-gm-subjlabel {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.mwa-gm-mail {
+    border: 1px solid #e3e8ee;
+    border-radius: .5rem;
+    background: #fafcff;
+    padding: .9rem 1rem;
+    font-size: .9rem;
+    line-height: 1.5;
+    color: #1f2937;
+    word-break: break-word;
+}
+
+.mwa-gm-mail table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: .5rem 0;
+}
+
+.mwa-gm-mail th {
+    text-align: left;
+    background: #f1f5f9;
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #64748b;
+    padding: .35rem .5rem;
+}
+
+.mwa-gm-mail td {
+    padding: .35rem .5rem;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.mwa-gm-badge {
+    display: inline-block;
+    padding: .2rem .6rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mwa-gm-badge-sent {
+    background: #e7f6ec;
+    color: #157347;
+}
+
+.mwa-gm-badge-error {
+    background: #fdecec;
+    color: #b02a37;
+}
+
+.mwa-gm-badge-notenrolled {
+    background: #eef1f5;
+    color: #495057;
+}
+
+.mwa-gm-channel-yes {
+    color: #157347;
+    font-weight: 700;
+}
+
+.mwa-gm-channel-no {
+    color: #b02a37;
+    font-weight: 700;
+}
+
+.mwa-gm-summary {
+    font-size: .9rem;
+    color: #495057;
+    margin-bottom: .5rem;
+}

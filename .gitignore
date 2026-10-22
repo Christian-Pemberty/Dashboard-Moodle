@@ -1,0 +1,19 @@
+# Backups y temporales de despliegue
+*.bak
+*.bak-*
+*.orig
+*~
+
+# Paquetes de instalación (se generan con rebuildzip.ps1, viven fuera del repo)
+*.zip
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores / IDEs
+*.swp
+*.swo
+.idea/
+.vscode/

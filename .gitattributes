@@ -1,0 +1,11 @@
+# Normaliza fin de líneas en el repo (LF) para que no haya ruido
+# entre la copia Windows (CRLF) y el servidor Linux.
+* text=auto
+
+# Binarios
+*.png  binary
+*.gif  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.zip  binary
