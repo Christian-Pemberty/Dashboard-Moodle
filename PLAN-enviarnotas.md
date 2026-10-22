@@ -917,3 +917,114 @@ passmark, filtros 🟢🔴🟡+Todos, búsqueda, columna Resultado, modal centra
 ⚠️ No separar la subida de lang del JS: `gradesmail_confirm_send` pasa a `Send now`
 (label del modal) y el JS viejo la usaba como texto de `window.confirm` (§11.3 ⚠️).
 
+---
+
+## 14. Punto de corte — sesión 22-oct-2026 (Paso 4 — EN CURSO: investigación completa, código pendiente)
+
+**Estado: Paso 4 APROBADO por el usuario («Arranca Paso 4»). Investigación y diseño
+COMPLETOS; el código del JS v2 NO se escribió aún** (la sesión se cortó justo antes del
+`write` de `amd/src/enviarnotas.js`). Todo lo investigado queda aquí para retomar sin
+re-leer archivos.
+
+### 14.1 Verificaciones hechas antes de escribir el v2
+
+- [x] `amd/src/enviarnotas.js` v1 (15,073 B, 386 líneas) leído completo → base para el v2
+      (se conserva: `callWS` con `Ajax.call([...])[0]` (§11.9), `t()`, `esc()`, `fmt()`,
+      `isnum()`, `gradeCell()`, `nameOf()`, `channelMark()`, `renderResults()`, patrón
+      `els.wrap.innerHTML` + `bindEls()`).
+- [x] `lang/en` (líneas 2151-2206), `lang/es` (56-103) y `lang/pt_br` (2162-2209): las 37
+      strings nuevas existen y coinciden con las 35 claves extra de `$gmkeys`
+      (las otras 2 son `button`/`page_desc`/`jsnotice` de PHP). Placeholders de
+      `confirm_body`: `{count}`, `{activity}`, `{passnote}`.
+- [x] `classes/api.php` (L1047-1080): fila de estudiante trae `act_{seq}` con **`'-'`
+      (dash) cuando no hay nota** → `isnum()` del v2 debe tratar `'-'` como no-numérico
+      (el v1 no lo hacía; solo afectaba al total, ahora afecta también a los filtros).
+- [x] `styles/gradesmail.css` v1 (5,071 B, 277 líneas) leído completo → el v2 solo
+      **agrega** clases (no rompe las existentes).
+- [x] `enviarnotas.php` NO requiere cambios: sus 59 claves cubren todo lo que usará el
+      v2 (verificado: tab_*, evalselect, passmin*, filter_*, searchplaceholder,
+      result*, hist_*, col_*, confirm_*, alert_noselection, error_*). La string v1
+      `noselection` queda sin uso (el v2 usa `alert_noselection`).
+- [x] `lang/es` y `lang/pt_br` listos en local (solo falta SUBIRLOS con el JS).
+
+### 14.2 Decisiones de diseño del v2 (cerradas; no re-discutir)
+
+1. **Módulo**: sigue siendo `define(['core/ajax'])` + ES5 (`var`, `function`) como todo el
+   plugin; sin `core/webservices` (§11.9).
+2. **Estado global**: `students[]` ({userid, name, total, totalmax, acts:{seq:valor}}),
+   `meta[]` (del WS send_options), `selSeq`, `filter` ('all'|'passed'|'failed'|'pending'),
+   `searchText`, `rowEls{uid→{tr,box,badge}}`, flags de historial (`histStarted/Offset/Total/State`).
+3. **Carga doble**: `get_grades` + `get_grades_send_options` en paralelo; la UI se arma
+   cuando ambas terminan (flags `studentsReady`/`metaReady` + `checkReady()`).
+4. **Select de actividad**: solo lista las actividades del WS; vacío+disabled si no hay.
+   Al cambiar → precarga passmark (`custom`/`fallback`), re-clasifica y resetea filtro a
+   'Todos' (documentado: no toca la selección).
+5. **Passmark**: precargado del WS (`passmark`/`hascustompassmark`); hint según estado
+   (`passmin_custom`/`passmin_fallback`/`passmin_none`); si `grademax=0` → campo vacío
+   habilitado (se define manual) con hint `passmin_none`. Sin actividad → disabled.
+6. **Filtros 🟢🔴🟡** (decisión §11.7-2(a)): muestran SOLO ese grupo Y marcan sus
+   checkboxes (deseleccionando el resto); **'Todos'** restaura la vista sin tocar la
+   selección; se re-aplican automáticamente al cambiar passmark/actividad. Chips
+   disabled cuando passmark≤0 (sin clasificación posible). Punto pendiente de decisión:
+   semántica de "Seleccionar todos" con filtro activo → **decisión tomada: opera sobre
+   las filas visibles** (filtro ∩ búsqueda).
+7. **Búsqueda por nombre**: solo afecta visibilidad (no toca checkboxes); case-insensitive.
+8. **Columna "Resultado de la actividad"**: badge (`mwa-gm-badge-passed/failed/pending`)
+   recalculado en cada cambio de actividad/passmark; sin actividad o sin passmark →
+   dash neutro (`mwa-gm-dash`, sin string nueva).
+9. **Modal centrado** (reemplaza `window.confirm`/`alert`): un único `<div>` creado lazy
+   y agregado al root después de `buildUI()`; backdrop + diálogo; botones
+   `confirm_cancel` (sec) y `confirm_send` (primary, label); Escape y backdrop cierran;
+   foco en el botón primario (o en cancel si es solo alert). Confirmación usa
+   `confirm_body` con `{count}` + `{activity}` (nombre, o `confirm_noactivity` si no hay
+   actividad) + `{passnote}` = `confirm_passnote` solo si passmark>0. Alerts
+   (sin selección / error WS) usan `error_title` + `alert_noselection`/`error_generic`.
+10. **Historial** (pestaña, carga perezosa al primer switch): WS
+    `get_grades_mail_history` (limit 25, offset creciente), filtro de estado
+    (hist_state_all/sent/error), "Cargar más" visible si `offset < total`, empty state
+    `hist_empty`; fila = fecha/hora formateadas con `Intl.DateTimeFormat(undefined, …)`
+    desde `timesent` (epoch) — el `date`/`time` del server en ES vienen partidos raro
+    ("22" / "de octubre de 2026, 07:48", ver §13.1 ⚠️), docente, estudiante, badge estado
+    (`hist_state_sent`/`hist_bounced`), asunto (word-break).
+11. **Estilo**: conservar `mwa-gm-*`; nuevos: tabs (`mwa-gm-tabs/tab/is-active`),
+    chips con punto de color por CSS (`::before`), select/input, hint, badges de
+    resultado, dash, modal (fixed + backdrop + box), historial.
+12. **Minificado**: a mano (sin Grunt, mismo criterio que las otras 14) →
+    `amd/build/enviarnotas.min.js`; verificar con `node --check` (Node v24 disponible).
+
+### 14.3 Lo que queda del Paso 4 (orden exacto al retomar)
+
+1. **Escribir `amd/src/enviarnotas.js` (v2)** — el único archivo NO creado aún; diseño
+   completo en §14.2 y base v1 ya leída (§14.1).
+2. `node --check` en el src.
+3. Minificar a mano → `amd/build/enviarnotas.min.js` + `node --check`.
+4. `styles/gradesmail.css`: **agregar** (no reemplazar) los estilos nuevos de §14.2-11.
+5. `php -l` en `enviarnotas.php` + 3 `lang` (por seguridad; no se tocaron).
+6. **Deploy TODO JUNTO** (riesgo §11.3): `amd/src/enviarnotas.js`,
+   `amd/build/enviarnotas.min.js`, `styles/gradesmail.css`, `enviarnotas.php` (59 keys),
+   `lang/en`, `lang/es`, `lang/pt_br` → `/tmp` (nombre nuevo por archivo) → `docker cp`
+   a sus rutas en `moodle_app:/bitnami/moodle/blocks/mwa_dashboard/`. (Patrón §12.5:
+   SCP no sobrescribe → nombre nuevo; `docker cp` sí sobrescribe.)
+7. Probar en curso **id=2** con navegador (admin): pestaña Enviar (lista 7 estudiantes,
+   select quiz, passmark 6, filtros 🟢🔴🟡 sobre datos reales (3 con nota), búsqueda,
+   preview, modal, envío a 1 estudiante) y pestaña Historial (9 envíos reales, filtro
+   estado, cargar más). *(usuario confirma)*
+8. Commit incremental + update de este plan (§14 → ✅ y Paso 4 cerrado).
+9. Luego: Paso 5 (probar/afinar Historial ya incluido en el v2), Paso 6 (modales ya
+   incluidos en el v2 — verificarlos), Paso 7 (cierre: php -l + node --check +
+   changelog README/ESTRUCTURA si queda tiempo).
+
+### 14.4 Estado del despliegue (contraste local ↔ producción)
+
+| Archivo | Local | Servidor (producción) |
+| --- | --- | --- |
+| `classes/external.php` | fix LIMIT/OFFSET (sha256 `5e9513a8…bee21b`) | ✅ igual (subido en §13.2) |
+| `db/services.php`, `version.php` | 2 WS + 2026102201 | ✅ (Paso 3, §12.1) |
+| `amd/src/enviarnotas.js` | v1 (15,073 B) | v1 (15,073 B) |
+| `amd/build/enviarnotas.min.js` | v1 (8,081 B) | v1 (8,081 B) + `.bak` residual |
+| `styles/gradesmail.css` | v1 (5,071 B) | v1 |
+| `enviarnotas.php` | 59 claves | v1 (24 claves) |
+| `lang/en` | completo | completo (§12.1 sin subir lang nueva: verificar) |
+| `lang/es`, `lang/pt_br` | completo (+37) | v1 (sin las 37 nuevas) |
+
+
