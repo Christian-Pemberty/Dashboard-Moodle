@@ -2197,7 +2197,7 @@ $string['gradesmail_hist_bounced'] = 'Bounced / failed';
 // Confirmation and alert dialogs (centered, non-blocking).
 $string['gradesmail_confirm_title'] = 'Send grades to students?';
 $string['gradesmail_confirm_body'] = 'You are about to send the grades to {count} student(s). Each of them will receive one email and one Moodle message with the grades for the activity: {activity}.{passnote}';
-$string['gradesmail_confirm_passnote'] = ' This is for the minimum-approval classification only; it does not change the email content.'
+$string['gradesmail_confirm_passnote'] = ' This is for the minimum-approval classification only; it does not change the email content.';
 $string['gradesmail_confirm_noactivity'] = ' (no single activity selected; course totals will be shown)';
 $string['gradesmail_confirm_cancel'] = 'Cancel';
 $string['gradesmail_confirm_send'] = 'Send now';

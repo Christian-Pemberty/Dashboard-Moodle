@@ -46,6 +46,19 @@ $gmkeys = [
     'sending', 'confirm_send', 'noselection', 'nostudents', 'results', 'status_sent',
     'status_error', 'status_notenrolled', 'channel_email', 'channel_moodle', 'nograde',
     'error_generic',
+    // Tabs / activity selection / pass mark.
+    'tab_send', 'tab_history', 'evalselect',
+    'passmin', 'passmin_custom', 'passmin_fallback', 'passmin_none',
+    // Quick filters + search + result column.
+    'filter_all', 'filter_passed', 'filter_failed', 'filter_pending',
+    'searchplaceholder', 'resultcol', 'result_passed', 'result_failed', 'result_pending',
+    // History tab.
+    'hist_title', 'hist_empty', 'hist_more', 'hist_state_all',
+    'hist_state_sent', 'hist_state_error',
+    'col_date', 'col_time', 'col_teacher', 'col_status', 'col_subject', 'hist_bounced',
+    // Confirmation and alert dialogs (centered, non-blocking).
+    'confirm_title', 'confirm_body', 'confirm_passnote', 'confirm_noactivity',
+    'confirm_cancel', 'alert_noselection', 'error_title',
 ];
 // Fetch the localised UI strings. "gradesmail_selectedcount" keeps a {count}
 // placeholder that enviarnotas.js injects at runtime; we pass a same-named
