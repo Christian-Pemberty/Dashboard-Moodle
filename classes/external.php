@@ -1162,6 +1162,275 @@ class external extends \external_api {
         ]);
     }
 
+    // -- grades send options ------------------------------------------
+
+    public static function get_grades_send_options_parameters() {
+        return new \external_function_parameters([
+            'courseid' => new \external_value(PARAM_INT, 'Course ID'),
+            'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+        ]);
+    }
+
+    /**
+     * Gradeable activities of the course with their pass marks.
+     *
+     * The 1-based "seq" of each activity is aligned with the "act_i" student
+     * columns produced by api::get_grades(), so the "send grades" page can map
+     * a selected activity + minimum approval grade onto the per-student
+     * grades without an extra round trip.
+     *
+     * Pass mark rule (matches Moodle's gradebook behaviour):
+     *  - explicit item pass mark (> 0) is used when defined;
+     *  - otherwise the default 50% of the maximum applies.
+     *
+     * @param int $courseid Course ID.
+     * @param int $groupid Optional course group scope.
+     * @return array Key "activities": list of activity options.
+     */
+    public static function get_grades_send_options(int $courseid, int $groupid = 0): array {
+        global $DB;
+
+        $params = self::validate_parameters(self::get_grades_send_options_parameters(), [
+            'courseid' => $courseid,
+            'groupid'  => $groupid,
+        ]);
+        $ctx = \context_course::instance($params['courseid']);
+        self::validate_context($ctx);
+        require_capability('block/mwa_dashboard:view', $ctx);
+        require_capability('block/mwa_dashboard:manageinterventions', $ctx);
+        $groupid = self::validate_group_scope($params['courseid'], $params['groupid'], $ctx);
+
+        $meta = null;
+        foreach (api::get_grades($params['courseid'], $groupid) as $r) {
+            if ($r && ($r['__mwa_type__'] ?? '') === 'activity_names') {
+                $meta = $r;
+                break;
+            }
+        }
+        if (!is_array($meta)) {
+            return ['activities' => []];
+        }
+
+        // Map cmid => course module record (same selection as api::get_grades:
+        // not deleted, not excluded by the course capture settings).
+        $excluded = api::get_excluded_cmids($params['courseid']);
+        $cmmap = [];
+        $cms = $DB->get_records_sql(
+            "SELECT cm.id, cm.instance, m.name AS modname
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module
+              WHERE cm.course = :courseid
+                AND cm.deletioninprogress = 0",
+            ['courseid' => (int)$params['courseid']]
+        );
+        foreach ($cms as $cm) {
+            if (!isset($excluded[(int)$cm->id])) {
+                $cmmap[(int)$cm->id] = $cm;
+            }
+        }
+
+        $activities = [];
+        $seq = 0;
+        for ($i = 1; is_array($meta) && array_key_exists('act_' . $i, $meta); $i++) {
+            $seq++;
+            $cmid = (int)($meta['act_cmid_' . $i] ?? 0);
+            $activity = [
+                'seq'                 => $seq,
+                'cmid'                => $cmid,
+                'name'                => (string)($meta['act_' . $i] ?? ('#' . $seq)),
+                'modname'             => (string)($meta['act_module_' . $i] ?? ''),
+                'grademax'            => 0,
+                'passmark'            => 0,
+                'hascustompassmark'   => false,
+            ];
+            if ($cmid > 0 && isset($cmmap[$cmid])) {
+                $itemrows = $DB->get_records(
+                    'grade_items',
+                    [
+                        'courseid'     => (int)$params['courseid'],
+                        'itemmodule'   => $cmmap[$cmid]->modname,
+                        'iteminstance' => (int)$cmmap[$cmid]->instance,
+                        'itemtype'     => 'mod',
+                        'hidden'       => 0,
+                    ],
+                    'sortorder, id',
+                    'id, grademax, gradepass'
+                );
+                foreach ((array)$itemrows as $item) {
+                    $grademax = (float)$item->grademax;
+                    $passmark = (float)($item->gradepass ?? 0);
+                    if ($grademax > 0) {
+                        $activity['grademax'] = $grademax;
+                        if ($passmark > 0) {
+                            $activity['passmark'] = $passmark;
+                            $activity['hascustompassmark'] = true;
+                        } else {
+                            // No explicit pass mark in Moodle: default is 50% of the max.
+                            $activity['passmark'] = round($grademax / 2, 2);
+                        }
+                    }
+                    break;
+                }
+            }
+            $activities[] = $activity;
+        }
+
+        return ['activities' => $activities];
+    }
+
+    public static function get_grades_send_options_returns(): \external_single_structure {
+        return new \external_single_structure([
+            'activities' => new \external_multiple_structure(new \external_single_structure([
+                'seq'                 => new \external_value(PARAM_INT, '1-based position aligned with the act_i columns of get_grades'),
+                'cmid'                => new \external_value(PARAM_INT, 'Course module ID'),
+                'name'                => new \external_value(PARAM_TEXT, 'Activity name'),
+                'modname'             => new \external_value(PARAM_TEXT, 'Moodle module name (assign, quiz, ...)'),
+                'grademax'            => new \external_value(PARAM_FLOAT, 'Grade maximum (0 when unknown)'),
+                'passmark'            => new \external_value(PARAM_FLOAT, 'Pass mark, explicit in Moodle or derived (0 when unknown)'),
+                'hascustompassmark'   => new \external_value(PARAM_BOOL, 'True when Moodle has an explicit pass mark for this activity'),
+            ])),
+        ]);
+    }
+
+    // -- grades send history ------------------------------------------
+
+    public static function get_grades_mail_history_parameters() {
+        return new \external_function_parameters([
+            'courseid' => new \external_value(PARAM_INT, 'Course ID'),
+            'status'   => new \external_value(PARAM_TEXT, 'Filter: empty for all, "sent" or "error"', VALUE_DEFAULT, ''),
+            'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+            'limit'    => new \external_value(PARAM_INT, 'Page size (1-100)', VALUE_DEFAULT, 25),
+            'offset'   => new \external_value(PARAM_INT, 'Number of matching rows to skip', VALUE_DEFAULT, 0),
+        ]);
+    }
+
+    /**
+     * Audit log of previous grades sends in the course (newest first).
+     *
+     * Only rows registered by send_grades_mail() (intervention_reason 'Grades')
+     * are returned. The email channel is the primary one (status), and the
+     * Moodle message channel is derived from its linked message id.
+     *
+     * @param int $courseid Course ID.
+     * @param string $status Optional filter: "", "sent" or "error".
+     * @param int $groupid Optional course group scope.
+     * @param int $limit Page size (1-100).
+     * @param int $offset Rows to skip for pagination.
+     * @return array total matching rows and the page of entries.
+     */
+    public static function get_grades_mail_history(int $courseid, string $status = '', int $groupid = 0, int $limit = 25, int $offset = 0): array {
+        global $DB;
+
+        $params = self::validate_parameters(self::get_grades_mail_history_parameters(), [
+            'courseid' => $courseid,
+            'status'   => $status,
+            'groupid'  => $groupid,
+            'limit'    => $limit,
+            'offset'   => $offset,
+        ]);
+        $ctx = \context_course::instance($params['courseid']);
+        self::validate_context($ctx);
+        require_capability('block/mwa_dashboard:view', $ctx);
+        require_capability('block/mwa_dashboard:manageinterventions', $ctx);
+        $groupid = self::validate_group_scope($params['courseid'], $params['groupid'], $ctx);
+
+        $limit  = max(1, min(100, (int)$params['limit']));
+        $offset = max(0, (int)$params['offset']);
+        $status = trim((string)$params['status']);
+        if ($status !== '' && $status !== 'sent' && $status !== 'error') {
+            $status = '';
+        }
+
+        $sql = "SELECT m.id, m.timesent, m.status, m.send_type, m.subject,
+                        m.moodle_msgid, m.userid, m.teacherid,
+                        su.firstname AS sfn, su.lastname AS sln,
+                        tu.firstname AS tfn, tu.lastname AS tln
+                 FROM {block_mwa_dashboard_messages} m
+                 JOIN {user} tu ON tu.id = m.teacherid
+                 JOIN {user} su ON su.id = m.userid
+                WHERE m.courseid = :c1
+                  AND m.intervention_reason = :reason";
+        $sqlparams = [
+            'c1'     => (int)$params['courseid'],
+            'reason' => 'Grades',
+        ];
+        if ($status !== '') {
+            $sql .= ' AND m.status = :st';
+            $sqlparams['st'] = $status;
+        }
+        if ($groupid > 0) {
+            $sql .= ' AND m.userid IN (SELECT userid FROM {groups_members} WHERE groupid = :gid)';
+            $sqlparams['gid'] = (int)$params['groupid'];
+        }
+
+        $total = (int)$DB->count_records_sql('SELECT COUNT(*) FROM (' . $sql . ') tmwa', $sqlparams);
+
+        $sql .= ' ORDER BY m.timesent DESC, m.id DESC';
+        $rows = $DB->get_records_sql($sql . ' LIMIT :lim OFFSET :off', $sqlparams + ['lim' => $limit, 'off' => $offset]);
+
+        $fmt = get_config('core', 'fullnameformat');
+        $fmt = ($fmt === 'lastname_firstname') ? 'lf' : 'fl';
+        $fullname = function (object $r, string $p1, string $p2) use ($fmt): string {
+            $first  = trim((string)$r->$p1);
+            $last   = trim((string)$r->$p2);
+            return $fmt === 'lf'
+                ? trim($last . ' ' . $first)
+                : trim($first . ' ' . $last);
+        };
+
+        $entries = [];
+        foreach ($rows as $row) {
+            $timesent = (int)$row->timesent;
+            $datetime = userdate($timesent, get_string('strftimedatetime'));
+            $space    = strpos($datetime, ' ');
+            $subject  = (string)$row->subject;
+            if (function_exists('mb_substr')) {
+                $subject = mb_substr($subject, 0, 90);
+            } else {
+                $subject = substr($subject, 0, 90);
+            }
+            $entries[] = [
+                'recordid'      => (int)$row->id,
+                'timesent'      => $timesent,
+                'date'          => ($space === false) ? $datetime : substr($datetime, 0, $space),
+                'time'          => ($space === false) ? '' : trim(substr($datetime, $space + 1)),
+                'teacherid'     => (int)$row->teacherid,
+                'teachername'   => $fullname($row, 'tfn', 'tln'),
+                'studentid'     => (int)$row->userid,
+                'studentname'   => $fullname($row, 'sfn', 'sln'),
+                'status'        => (string)$row->status,
+                'send_type'     => (string)$row->send_type,
+                'subject'       => $subject,
+                'moodlelinked'  => !empty($row->moodle_msgid),
+            ];
+        }
+
+        return [
+            'total'   => $total,
+            'entries' => $entries,
+        ];
+    }
+
+    public static function get_grades_mail_history_returns(): \external_single_structure {
+        return new \external_single_structure([
+            'total'   => new \external_value(PARAM_INT, 'Total matching sends in the course'),
+            'entries' => new \external_multiple_structure(new \external_single_structure([
+                'recordid'      => new \external_value(PARAM_INT, 'ID in block_mwa_dashboard_messages'),
+                'timesent'      => new \external_value(PARAM_INT, 'Unix timestamp of the send'),
+                'date'          => new \external_value(PARAM_TEXT, 'Send date for the current user'),
+                'time'          => new \external_value(PARAM_TEXT, 'Send time for the current user'),
+                'teacherid'     => new \external_value(PARAM_INT, 'ID of the teacher who sent'),
+                'teachername'   => new \external_value(PARAM_TEXT, 'Full name of the teacher'),
+                'studentid'     => new \external_value(PARAM_INT, 'ID of the student recipient'),
+                'studentname'   => new \external_value(PARAM_TEXT, 'Full name of the student'),
+                'status'        => new \external_value(PARAM_TEXT, 'sent or error (email channel is the primary result)'),
+                'send_type'     => new \external_value(PARAM_TEXT, 'moodle, email or both'),
+                'subject'       => new \external_value(PARAM_TEXT, 'Email subject (truncated)'),
+                'moodlelinked'  => new \external_value(PARAM_BOOL, 'True when the Moodle message was linked (message id stored)'),
+            ])),
+        ]);
+    }
+
     /* ════════════════════════════════════════════════════════════
        get_interventions — histórico de intervenções do curso
     ════════════════════════════════════════════════════════════ */

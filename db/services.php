@@ -57,6 +57,22 @@ $functions = [
         'ajax'          => true,
         'loginrequired' => true,
     ],
+    'block_mwa_dashboard_get_grades_send_options' => [
+        'classname'     => 'block_mwa_dashboard\external',
+        'methodname'    => 'get_grades_send_options',
+        'description'   => 'List the gradeable activities of the course with their pass marks',
+        'type'          => 'read',
+        'ajax'          => true,
+        'loginrequired' => true,
+    ],
+    'block_mwa_dashboard_get_grades_mail_history' => [
+        'classname'     => 'block_mwa_dashboard\external',
+        'methodname'    => 'get_grades_mail_history',
+        'description'   => 'Audit log of previous grades sends in the course',
+        'type'          => 'read',
+        'ajax'          => true,
+        'loginrequired' => true,
+    ],
     'block_mwa_dashboard_send_message' => [
         'classname'     => 'block_mwa_dashboard\external',
         'methodname'    => 'send_message',
