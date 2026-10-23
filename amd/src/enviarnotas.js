@@ -14,12 +14,21 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * "Send grades" page: student list, multiple selection, exact email preview
- * and batch send (email + Moodle message) with per-student results.
+ * "Send grades" page (v2).
  *
- * All the text is server-rendered: the only data read from
- * block_mwa_dashboard_get_grades is the row of each listed student, and the
- * preview/send web services build the exact same message on the server
+ * - Tabs: Send grades / Send history.
+ * - Activity selector + minimum approval grade (pre-filled from the
+ *   block_mwa_dashboard_get_grades_send_options web service) drive the green /
+ *   red / yellow classification shown per student. The classification only
+ *   affects the UI (result column + quick filters); the email content itself
+ *   is always built on the server (global grade + full activity breakdown).
+ * - Quick filters (passed / failed / pending + all) and name search.
+ * - Preview and batch send (email + Moodle message) with per-student results.
+ * - History of sends (lazy loaded, paged, with a status filter).
+ * - Centered confirmation / alert dialogs (no window.confirm / window.alert).
+ *
+ * All the text is server-rendered: the preview and send web services build
+ * the exact same message on the server
  * (block_mwa_dashboard\external::build_grades_mail), so another student's
  * grades can never leak into one email.
  *
@@ -32,8 +41,7 @@ define(['core/ajax'], function(Ajax) {
     'use strict';
 
     // Call a web service through core/ajax (this core build has no core/webservices module).
-    // Mirrors the working block_mwa_dashboard/dashboard module: Ajax.call([...])[0] is a
-    // promise that resolves to the external function's return value.
+    // Ajax.call([...])[0] is a promise that resolves to the external function's return value.
     var callWS = function(methodname, args) {
         var calls = Ajax.call([{
             methodname: methodname,
@@ -42,12 +50,26 @@ define(['core/ajax'], function(Ajax) {
         return calls[0];
     };
 
+    var HIST_PAGE = 25;
+
     var courseid = 0;
     var groupid = 0;
     var str = {};
-    var students = [];
+    var rawRows = [];          // parsed student rows from get_grades (raw data kept for acts).
+    var students = [];         // {userid, name, total, totalmax, acts:{seq:value}}
+    var activities = [];       // [{seq, cmid, name, modname, grademax, passmark, hascustompassmark}]
+    var selSeq = null;         // activity being evaluated (null = course totals only).
+    var filter = 'all';        // all | passed | failed | pending
+    var searchText = '';       // lower-cased, visibility only (does not touch checkboxes).
+    var studentsReady = false;
+    var metaReady = false;
+    var loadError = false;
+    var uiBuilt = false;
     var busy = false;
     var els = {};
+    var rowEls = {};           // uid -> {tr, box, badge}
+    var hist = {started: false, busy: false, state: '', offset: 0, total: 0, rows: []};
+    var modalOnOk = null;
 
     var t = function(key) {
         return (typeof str[key] === 'string' && str[key] !== '') ? str[key] : key;
@@ -71,82 +93,311 @@ define(['core/ajax'], function(Ajax) {
     };
 
     var isnum = function(value) {
-        return value !== null && value !== undefined && value !== '' && isFinite(Number(value));
+        if (value === null || value === undefined || value === '') {
+            return false;
+        }
+        return isFinite(Number(value));
+    };
+
+    // ---------- Classification (UI only: result column + quick filters). ----------
+
+    var currentActivity = function() {
+        for (var i = 0; i < activities.length; i++) {
+            if (parseInt(activities[i].seq, 10) === selSeq) {
+                return activities[i];
+            }
+        }
+        return null;
+    };
+
+    var passmarkValue = function() {
+        if (!els.passmark) {
+            return 0;
+        }
+        var v = els.passmark.value;
+        return isnum(v) ? Number(v) : 0;
+    };
+
+    var canClassify = function() {
+        return selSeq !== null && passmarkValue() > 0;
+    };
+
+    var classify = function(s) {
+        if (!canClassify()) {
+            return null;
+        }
+        var grade = s.acts[selSeq];
+        if (!isnum(grade)) {
+            return 'pending';
+        }
+        return (Number(grade) >= passmarkValue()) ? 'passed' : 'failed';
+    };
+
+    var rowVisible = function(s) {
+        if (filter !== 'all' && classify(s) !== filter) {
+            return false;
+        }
+        if (searchText !== '') {
+            if (s.name.toLowerCase().indexOf(searchText) === -1) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // ---------- Modal (centered confirm/alert, replaces window.confirm/alert). ----------
+
+    var buildModal = function() {
+        var el = document.createElement('div');
+        el.className = 'mwa-gm-modal';
+        el.id = 'mwaGmModal';
+        el.hidden = true;
+        el.innerHTML =
+            '<div class="mwa-gm-modal-backdrop"></div>' +
+            '<div class="mwa-gm-modal-box" role="dialog" aria-modal="true">' +
+            '  <h2 id="mwaGmModalTitle"></h2>' +
+            '  <p id="mwaGmModalBody"></p>' +
+            '  <div class="mwa-gm-actions mwa-gm-modal-actions">' +
+            '    <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmModalCancel"></button>' +
+            '    <button type="button" class="mwa-gm-btn mwa-gm-btn-primary" id="mwaGmModalOk"></button>' +
+            '  </div>' +
+            '</div>';
+        els.wrap.appendChild(el);
+        els.modal = el;
+        els.modalTitle = el.querySelector('#mwaGmModalTitle');
+        els.modalBody = el.querySelector('#mwaGmModalBody');
+        els.modalCancel = el.querySelector('#mwaGmModalCancel');
+        els.modalOk = el.querySelector('#mwaGmModalOk');
+        els.modalBackdrop = el.querySelector('.mwa-gm-modal-backdrop');
+
+        els.modalBackdrop.addEventListener('click', function() { closeModal(); });
+        els.modalCancel.addEventListener('click', function() { closeModal(); });
+        els.modalOk.addEventListener('click', function() {
+            var cb = modalOnOk;
+            modalOnOk = null;
+            closeModal();
+            if (typeof cb === 'function') {
+                cb();
+            }
+        });
+        document.addEventListener('keydown', function(ev) {
+            if (!els.modal.hidden && ev.key === 'Escape') {
+                closeModal();
+            }
+        });
+    };
+
+    var setModal = function(title, body, confirmMode) {
+        els.modalTitle.textContent = title;
+        els.modalBody.textContent = body;
+        els.modalOk.style.display = confirmMode ? '' : 'none';
+        els.modalCancel.textContent = t('confirm_cancel');
+        els.modalOk.textContent = t('confirm_send');
+        els.modal.hidden = false;
+        window.setTimeout(function() {
+            (confirmMode ? els.modalOk : els.modalCancel).focus();
+        }, 0);
+    };
+
+    var openConfirm = function(title, body, onOk) {
+        modalOnOk = onOk;
+        setModal(title, body, true);
+    };
+
+    var openAlert = function(title, body) {
+        modalOnOk = null;
+        setModal(title, body, false);
+    };
+
+    var closeModal = function() {
+        modalOnOk = null;
+        if (els.modal) {
+            els.modal.hidden = true;
+        }
+    };
+
+    // ---------- UI construction. ----------
+
+    var chipHtml = function(kind, label) {
+        return '<button type="button" class="mwa-gm-chip mwa-gm-chip-' + kind + '" data-filter="' + kind + '">' +
+            esc(label) + '</button>';
     };
 
     var buildUI = function() {
         els.wrap.innerHTML =
             '<div class="mwa-gm-wrap">' +
-            '  <section class="mwa-gm-card">' +
-            '    <div class="mwa-gm-cardhead">' +
-            '      <h2>' + esc(t('students')) + '</h2>' +
-            '      <span class="mwa-gm-count" id="mwaGmCount"></span>' +
-            '    </div>' +
-            '    <div class="mwa-gm-actions">' +
-            '      <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmSelectAll">' + esc(t('selectall')) + '</button>' +
-            '      <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmDeselectAll">' + esc(t('deselectall')) + '</button>' +
-            '    </div>' +
-            '    <table class="mwa-gm-table" id="mwaGmTable">' +
-            '      <thead><tr>' +
-            '        <th class="mwa-gm-check"></th>' +
-            '        <th>' + esc(t('col_student')) + '</th>' +
-            '        <th class="num">' + esc(t('col_grade')) + '</th>' +
-            '      </tr></thead>' +
-            '      <tbody id="mwaGmRows"></tbody>' +
-            '    </table>' +
-            '    <p class="mwa-gm-empty" id="mwaGmEmpty" hidden>' + esc(t('nostudents')) + '</p>' +
-            '  </section>' +
-            '  <section class="mwa-gm-card">' +
-            '    <label class="mwa-gm-label" for="mwaGmComment">' + esc(t('comment')) + '</label>' +
-            '    <textarea id="mwaGmComment" class="mwa-gm-textarea" rows="3" placeholder="' + esc(t('commentplaceholder')) + '"></textarea>' +
-            '  </section>' +
-            '  <div class="mwa-gm-actions mwa-gm-actions-end">' +
-            '    <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmPreviewBtn">' + esc(t('preview')) + '</button>' +
-            '    <button type="button" class="mwa-gm-btn mwa-gm-btn-primary" id="mwaGmSendBtn">' + esc(t('send')) + '</button>' +
+            // Tabs.
+            '  <div class="mwa-gm-tabs">' +
+            '    <button type="button" class="mwa-gm-tab is-active" id="mwaGmTabSend">' + esc(t('tab_send')) + '</button>' +
+            '    <button type="button" class="mwa-gm-tab" id="mwaGmTabHistory">' + esc(t('tab_history')) + '</button>' +
             '  </div>' +
-            '  <section class="mwa-gm-card" id="mwaGmPreviewCard" hidden>' +
-            '    <div class="mwa-gm-cardhead">' +
-            '      <h2>' + esc(t('previewtitle')) + '</h2>' +
-            '      <span class="mwa-gm-student" id="mwaGmPreviewStudent"></span>' +
+            // Panel: send.
+            '  <div id="mwaGmPanelSend">' +
+            '    <section class="mwa-gm-card">' +
+            '      <div class="mwa-gm-field">' +
+            '        <label class="mwa-gm-label" for="mwaGmActivity">' + esc(t('evalselect')) + '</label>' +
+            '        <select id="mwaGmActivity" class="mwa-gm-select"></select>' +
+            '      </div>' +
+            '      <div class="mwa-gm-field">' +
+            '        <label class="mwa-gm-label" for="mwaGmPassmark">' + esc(t('passmin')) + '</label>' +
+            '        <input type="number" min="0" step="0.01" id="mwaGmPassmark" class="mwa-gm-input mwa-gm-input-narrow" disabled>' +
+            '        <p class="mwa-gm-hint" id="mwaGmPassHint"></p>' +
+            '      </div>' +
+            '    </section>' +
+            '    <section class="mwa-gm-card">' +
+            '      <div class="mwa-gm-cardhead">' +
+            '        <h2>' + esc(t('students')) + '</h2>' +
+            '        <span class="mwa-gm-count" id="mwaGmCount"></span>' +
+            '      </div>' +
+            '      <div class="mwa-gm-actions">' +
+            '        <input type="search" id="mwaGmSearch" class="mwa-gm-input mwa-gm-input-search" ' +
+            '           aria-label="' + esc(t('searchplaceholder')) + '" placeholder="' + esc(t('searchplaceholder')) + '">' +
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmSelectAll">' + esc(t('selectall')) + '</button>' +
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmDeselectAll">' + esc(t('deselectall')) + '</button>' +
+            '      </div>' +
+            '      <div class="mwa-gm-chips" id="mwaGmChips">' +
+            '        ' + chipHtml('all', t('filter_all')) +
+            '        ' + chipHtml('passed', t('filter_passed')) +
+            '        ' + chipHtml('failed', t('filter_failed')) +
+            '        ' + chipHtml('pending', t('filter_pending')) +
+            '      </div>' +
+            '      <table class="mwa-gm-table" id="mwaGmTable">' +
+            '        <thead><tr>' +
+            '          <th class="mwa-gm-check"></th>' +
+            '          <th>' + esc(t('col_student')) + '</th>' +
+            '          <th class="num">' + esc(t('col_grade')) + '</th>' +
+            '          <th>' + esc(t('resultcol')) + '</th>' +
+            '        </tr></thead>' +
+            '        <tbody id="mwaGmRows"></tbody>' +
+            '      </table>' +
+            '      <p class="mwa-gm-empty" id="mwaGmEmpty" style="display:none">' + esc(t('nostudents')) + '</p>' +
+            '    </section>' +
+            '    <section class="mwa-gm-card">' +
+            '      <label class="mwa-gm-label" for="mwaGmComment">' + esc(t('comment')) + '</label>' +
+            '      <textarea id="mwaGmComment" class="mwa-gm-textarea" rows="3" placeholder="' + esc(t('commentplaceholder')) + '"></textarea>' +
+            '    </section>' +
+            '    <div class="mwa-gm-actions mwa-gm-actions-end">' +
+            '      <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmPreviewBtn">' + esc(t('preview')) + '</button>' +
+            '      <button type="button" class="mwa-gm-btn mwa-gm-btn-primary" id="mwaGmSendBtn">' + esc(t('send')) + '</button>' +
             '    </div>' +
-            '    <p class="mwa-gm-subjline"><span class="mwa-gm-subjlabel">' + esc(t('previewsubject')) + ':</span> ' +
-            '      <span id="mwaGmPreviewSubject"></span></p>' +
-            '    <div class="mwa-gm-mail" id="mwaGmPreviewBody"></div>' +
-            '  </section>' +
-            '  <section class="mwa-gm-card" id="mwaGmResultsCard" hidden>' +
-            '    <h2>' + esc(t('results')) + '</h2>' +
-            '    <p class="mwa-gm-summary" id="mwaGmResultsSummary"></p>' +
-            '    <table class="mwa-gm-table">' +
-            '      <thead><tr>' +
-            '        <th>' + esc(t('col_student')) + '</th>' +
-            '        <th>' + esc(t('results')) + '</th>' +
-            '        <th class="num">' + esc(t('channel_email')) + '</th>' +
-            '        <th class="num">' + esc(t('channel_moodle')) + '</th>' +
-            '      </tr></thead>' +
-            '      <tbody id="mwaGmResultsRows"></tbody>' +
-            '    </table>' +
-            '  </section>' +
+            '    <section class="mwa-gm-card" id="mwaGmPreviewCard" style="display:none">' +
+            '      <div class="mwa-gm-cardhead">' +
+            '        <h2>' + esc(t('previewtitle')) + '</h2>' +
+            '        <span class="mwa-gm-student" id="mwaGmPreviewStudent"></span>' +
+            '      </div>' +
+            '      <p class="mwa-gm-subjline"><span class="mwa-gm-subjlabel">' + esc(t('previewsubject')) + ':</span> ' +
+            '        <span id="mwaGmPreviewSubject"></span></p>' +
+            '      <div class="mwa-gm-mail" id="mwaGmPreviewBody"></div>' +
+            '    </section>' +
+            '    <section class="mwa-gm-card" id="mwaGmResultsCard" style="display:none">' +
+            '      <h2>' + esc(t('results')) + '</h2>' +
+            '      <p class="mwa-gm-summary" id="mwaGmResultsSummary"></p>' +
+            '      <table class="mwa-gm-table">' +
+            '        <thead><tr>' +
+            '          <th>' + esc(t('col_student')) + '</th>' +
+            '          <th>' + esc(t('results')) + '</th>' +
+            '          <th class="num">' + esc(t('channel_email')) + '</th>' +
+            '          <th class="num">' + esc(t('channel_moodle')) + '</th>' +
+            '        </tr></thead>' +
+            '        <tbody id="mwaGmResultsRows"></tbody>' +
+            '      </table>' +
+            '    </section>' +
+            '  </div>' +
+            // Panel: history.
+            '  <div id="mwaGmPanelHistory" style="display:none">' +
+            '    <section class="mwa-gm-card">' +
+            '      <div class="mwa-gm-cardhead">' +
+            '        <h2>' + esc(t('hist_title')) + '</h2>' +
+            '        <select id="mwaGmHistState" class="mwa-gm-select mwa-gm-select-narrow">' +
+            '          <option value="">' + esc(t('hist_state_all')) + '</option>' +
+            '          <option value="sent">' + esc(t('hist_state_sent')) + '</option>' +
+            '          <option value="error">' + esc(t('hist_state_error')) + '</option>' +
+            '        </select>' +
+            '      </div>' +
+            '      <table class="mwa-gm-table mwa-gm-table-hist" id="mwaGmHistTable" style="display:none">' +
+            '        <thead><tr>' +
+            '          <th>' + esc(t('col_date')) + '</th>' +
+            '          <th>' + esc(t('col_time')) + '</th>' +
+            '          <th>' + esc(t('col_teacher')) + '</th>' +
+            '          <th>' + esc(t('col_student')) + '</th>' +
+            '          <th>' + esc(t('col_status')) + '</th>' +
+            '          <th>' + esc(t('col_subject')) + '</th>' +
+            '        </tr></thead>' +
+            '        <tbody id="mwaGmHistRows"></tbody>' +
+            '      </table>' +
+            '      <p class="mwa-gm-empty" id="mwaGmHistEmpty" style="display:none">' + esc(t('hist_empty')) + '</p>' +
+            '      <div class="mwa-gm-actions mwa-gm-actions-end">' +
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmHistMore" style="display:none">' + esc(t('hist_more')) + '</button>' +
+            '      </div>' +
+            '    </section>' +
+            '  </div>' +
             '</div>';
     };
 
-    var bindEls = function(root) {
-        els.count = root.querySelector('#mwaGmCount');
-        els.table = root.querySelector('#mwaGmTable');
-        els.rows = root.querySelector('#mwaGmRows');
-        els.empty = root.querySelector('#mwaGmEmpty');
-        els.selectAll = root.querySelector('#mwaGmSelectAll');
-        els.deselectAll = root.querySelector('#mwaGmDeselectAll');
-        els.comment = root.querySelector('#mwaGmComment');
-        els.previewBtn = root.querySelector('#mwaGmPreviewBtn');
-        els.sendBtn = root.querySelector('#mwaGmSendBtn');
-        els.previewCard = root.querySelector('#mwaGmPreviewCard');
-        els.previewStudent = root.querySelector('#mwaGmPreviewStudent');
-        els.previewSubject = root.querySelector('#mwaGmPreviewSubject');
-        els.previewBody = root.querySelector('#mwaGmPreviewBody');
-        els.resultsCard = root.querySelector('#mwaGmResultsCard');
-        els.resultsSummary = root.querySelector('#mwaGmResultsSummary');
-        els.resultsRows = root.querySelector('#mwaGmResultsRows');
+    var bindEls = function() {
+        els.tabSend = els.wrap.querySelector('#mwaGmTabSend');
+        els.tabHistory = els.wrap.querySelector('#mwaGmTabHistory');
+        els.panelSend = els.wrap.querySelector('#mwaGmPanelSend');
+        els.panelHistory = els.wrap.querySelector('#mwaGmPanelHistory');
+        els.activity = els.wrap.querySelector('#mwaGmActivity');
+        els.passmark = els.wrap.querySelector('#mwaGmPassmark');
+        els.passHint = els.wrap.querySelector('#mwaGmPassHint');
+        els.count = els.wrap.querySelector('#mwaGmCount');
+        els.search = els.wrap.querySelector('#mwaGmSearch');
+        els.selectAll = els.wrap.querySelector('#mwaGmSelectAll');
+        els.deselectAll = els.wrap.querySelector('#mwaGmDeselectAll');
+        els.chips = els.wrap.querySelector('#mwaGmChips');
+        els.table = els.wrap.querySelector('#mwaGmTable');
+        els.rows = els.wrap.querySelector('#mwaGmRows');
+        els.empty = els.wrap.querySelector('#mwaGmEmpty');
+        els.comment = els.wrap.querySelector('#mwaGmComment');
+        els.previewBtn = els.wrap.querySelector('#mwaGmPreviewBtn');
+        els.sendBtn = els.wrap.querySelector('#mwaGmSendBtn');
+        els.previewCard = els.wrap.querySelector('#mwaGmPreviewCard');
+        els.previewStudent = els.wrap.querySelector('#mwaGmPreviewStudent');
+        els.previewSubject = els.wrap.querySelector('#mwaGmPreviewSubject');
+        els.previewBody = els.wrap.querySelector('#mwaGmPreviewBody');
+        els.resultsCard = els.wrap.querySelector('#mwaGmResultsCard');
+        els.resultsSummary = els.wrap.querySelector('#mwaGmResultsSummary');
+        els.resultsRows = els.wrap.querySelector('#mwaGmResultsRows');
+        els.histState = els.wrap.querySelector('#mwaGmHistState');
+        els.histTable = els.wrap.querySelector('#mwaGmHistTable');
+        els.histRows = els.wrap.querySelector('#mwaGmHistRows');
+        els.histEmpty = els.wrap.querySelector('#mwaGmHistEmpty');
+        els.histMore = els.wrap.querySelector('#mwaGmHistMore');
     };
+
+    var buildRows = function() {
+        var html = '';
+        students.forEach(function(s) {
+            html +=
+                '<tr>' +
+                '<td class="mwa-gm-check"><input type="checkbox" class="mwa-gm-checkbox" data-uid="' + s.userid + '"></td>' +
+                '<td>' + esc(s.name) + '</td>' +
+                '<td class="num">' + gradeCell(s) + '</td>' +
+                '<td><span class="mwa-gm-resultcell"></span></td>' +
+                '</tr>';
+        });
+        els.rows.innerHTML = html;
+        els.empty.style.display = (students.length === 0) ? '' : 'none';
+        els.table.style.display = (students.length === 0) ? 'none' : '';
+        rowEls = {};
+        Array.prototype.slice.call(els.rows.querySelectorAll('tr')).forEach(function(tr) {
+            var box = tr.querySelector('.mwa-gm-checkbox');
+            if (!box) {
+                return;
+            }
+            rowEls[parseInt(box.getAttribute('data-uid'), 10)] = {
+                tr: tr,
+                box: box,
+                badge: tr.querySelector('.mwa-gm-resultcell')
+            };
+        });
+        refreshResultColumn();
+        applyView(false);
+    };
+
+    // ---------- Students: selection, filters, search, result column. ----------
 
     var checkboxes = function() {
         return Array.prototype.slice.call(els.rows.querySelectorAll('.mwa-gm-checkbox'));
@@ -189,62 +440,123 @@ define(['core/ajax'], function(Ajax) {
         return name || ('#' + row['User ID']);
     };
 
-    var renderStudentList = function() {
-        var html = '';
+    var resultCellHtml = function(s) {
+        var c = classify(s);
+        if (c === null) {
+            return '<span class="mwa-gm-dash">&ndash;</span>';
+        }
+        return '<span class="mwa-gm-badge mwa-gm-badge-' + c + '">' + esc(t('result_' + c)) + '</span>';
+    };
+
+    var refreshResultColumn = function() {
         students.forEach(function(s) {
-            html += '<tr>' +
-                '<td class="mwa-gm-check"><input type="checkbox" class="mwa-gm-checkbox" data-uid="' + s.userid + '" /></td>' +
-                '<td>' + esc(s.name) + '</td>' +
-                '<td class="num">' + gradeCell(s) + '</td>' +
-                '</tr>';
+            var rec = rowEls[s.userid];
+            if (rec && rec.badge) {
+                rec.badge.innerHTML = resultCellHtml(s);
+            }
         });
-        els.rows.innerHTML = html;
-        els.empty.hidden = (students.length > 0);
-        els.table.style.display = (students.length > 0) ? '' : 'none';
+    };
+
+    var applyView = function(checkGroup) {
+        students.forEach(function(s) {
+            var rec = rowEls[s.userid];
+            if (!rec) {
+                return;
+            }
+            rec.tr.style.display = rowVisible(s) ? '' : 'none';
+            if (checkGroup) {
+                rec.box.checked = (classify(s) === filter);
+            }
+        });
         updateCount();
     };
 
-    var loadStudents = function() {
-        if (courseid <= 0) {
-            renderStudentList();
-            return;
-        }
-        callWS('block_mwa_dashboard_get_grades', {courseid: courseid, groupid: groupid}).then(function(res) {
-            var rows = [];
-            try {
-                rows = JSON.parse(res.grades || '[]');
-            } catch (e) {
-                rows = [];
-            }
-            students = [];
-            (rows || []).forEach(function(r) {
-                if (r && r.__mwa_type__ === 'student' && parseInt(r['User ID'], 10) > 0) {
-                    students.push({
-                        userid: parseInt(r['User ID'], 10),
-                        name: nameOf(r),
-                        total: r['Course total (Grade)'],
-                        totalmax: r['Course total max (Grade)']
-                    });
-                }
-            });
-            renderStudentList();
-        }).catch(function() {
-            showNotice(t('error_generic'));
+    var setChipState = function(kind) {
+        filter = kind;
+        Array.prototype.slice.call(els.chips.querySelectorAll('.mwa-gm-chip')).forEach(function(btn) {
+            btn.classList.toggle('is-active', btn.getAttribute('data-filter') === kind);
         });
     };
 
-    var showNotice = function(message) {
-        var note = document.createElement('div');
-        note.className = 'mwa-gm-error';
-        note.setAttribute('role', 'alert');
-        note.textContent = message;
-        els.wrap.insertBefore(note, els.wrap.firstChild);
-        window.setTimeout(function() {
-            if (note.parentNode) {
-                note.parentNode.removeChild(note);
+    var refreshChipsDisabled = function() {
+        var ok = canClassify();
+        Array.prototype.slice.call(els.chips.querySelectorAll('.mwa-gm-chip')).forEach(function(btn) {
+            var k = btn.getAttribute('data-filter');
+            if (k !== 'all') {
+                btn.disabled = !ok;
             }
-        }, 8000);
+        });
     };
+
+    var onChipClick = function(kind) {
+        if (kind !== 'all' && !canClassify()) {
+            return;
+        }
+        setChipState(kind);
+        // The colored chips mark that group (unchecking the rest); "all" only
+        // restores the view and keeps the current selection.
+        applyView(kind !== 'all');
+    };
+
+    var setAllVisible = function(on) {
+        students.forEach(function(s) {
+            var rec = rowEls[s.userid];
+            if (rec && rec.tr.style.display !== 'none') {
+                rec.box.checked = on;
+            }
+        });
+        updateCount();
+    };
+
+    var syncAfterClassifyChange = function() {
+        if (filter !== 'all' && !canClassify()) {
+            setChipState('all');
+        }
+        refreshChipsDisabled();
+        refreshResultColumn();
+        applyView(false);
+    };
+
+    // ---------- Activity / pass mark. ----------
+
+    var refreshPassmarkHint = function() {
+        var act = currentActivity();
+        var msg = '';
+        if (act) {
+            if (Number(act.grademax) > 0) {
+                msg = (act.hascustompassmark ? t('passmin_custom') : t('passmin_fallback'));
+            } else {
+                msg = t('passmin_none');
+            }
+        }
+        els.passHint.textContent = msg;
+    };
+
+    var populateActivities = function() {
+        var opts = '';
+        activities.forEach(function(a) {
+            var label = (a && a.name) ? a.name : ('#' + a.cmid);
+            if (a && Number(a.grademax) > 0) {
+                label += ' (' + fmt(a.grademax) + ')';
+            }
+            opts += '<option value="' + parseInt(a.seq, 10) + '">' + esc(label) + '</option>';
+        });
+        els.activity.innerHTML = opts;
+        els.activity.disabled = (activities.length === 0);
+        if (activities.length > 0) {
+            selSeq = parseInt(activities[0].seq, 10);
+            els.activity.value = String(selSeq);
+        } else {
+            selSeq = null;
+        }
+        var act = currentActivity();
+        els.passmark.value = (act && Number(act.passmark) > 0) ? act.passmark : '';
+        els.passmark.disabled = !act;
+        refreshPassmarkHint();
+        refreshChipsDisabled();
+    };
+
+    // ---------- Preview and send. ----------
 
     var doPreview = function() {
         if (busy) {
@@ -252,7 +564,7 @@ define(['core/ajax'], function(Ajax) {
         }
         var ids = selectedIds();
         if (!ids.length) {
-            window.alert(t('noselection'));
+            openAlert(t('error_title'), t('alert_noselection'));
             return;
         }
         busy = true;
@@ -263,12 +575,12 @@ define(['core/ajax'], function(Ajax) {
             groupid: groupid,
             comment: (els.comment.value || '').trim()
         }).then(function(res) {
-            els.previewStudent.textContent = res.studentname || '';
-            els.previewSubject.textContent = res.subject || '';
-            els.previewBody.innerHTML = res.html || '';
-            els.previewCard.hidden = false;
+            els.previewStudent.textContent = (res && res.studentname) || '';
+            els.previewSubject.textContent = (res && res.subject) || '';
+            els.previewBody.innerHTML = (res && res.html) || '';
+            els.previewCard.style.display = '';
         }).catch(function(err) {
-            showNotice((err && err.message) ? err.message : t('error_generic'));
+            openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
         }).then(function() {
             busy = false;
             els.previewBtn.disabled = false;
@@ -299,7 +611,8 @@ define(['core/ajax'], function(Ajax) {
                 badgeClass = 'notenrolled';
                 badgeLabel = t('status_notenrolled');
             }
-            html += '<tr>' +
+            html +=
+                '<tr>' +
                 '<td>' + esc(name) + '</td>' +
                 '<td><span class="mwa-gm-badge mwa-gm-badge-' + esc(badgeClass) + '">' + esc(badgeLabel) + '</span></td>' +
                 '<td class="num">' + channelMark(r.emailsent) + '</td>' +
@@ -310,7 +623,17 @@ define(['core/ajax'], function(Ajax) {
         els.resultsSummary.innerHTML =
             esc(String(res.sent || 0)) + ' ' + esc(t('status_sent')) + ' &middot; ' +
             esc(String(res.failed || 0)) + ' ' + esc(t('status_error'));
-        els.resultsCard.hidden = false;
+        els.resultsCard.style.display = '';
+    };
+
+    var confirmBody = function(count) {
+        var act = currentActivity();
+        var activityLabel = (act && act.name) ? act.name : t('confirm_noactivity');
+        var passnote = canClassify() ? t('confirm_passnote') : '';
+        return t('confirm_body')
+            .replace('{count}', String(count))
+            .replace('{activity}', activityLabel)
+            .replace('{passnote}', passnote);
     };
 
     var doSend = function() {
@@ -319,12 +642,15 @@ define(['core/ajax'], function(Ajax) {
         }
         var ids = selectedIds();
         if (!ids.length) {
-            window.alert(t('noselection'));
+            openAlert(t('error_title'), t('alert_noselection'));
             return;
         }
-        if (!window.confirm(t('confirm_send'))) {
-            return;
-        }
+        openConfirm(t('confirm_title'), confirmBody(ids.length), function() {
+            doSendActual(ids);
+        });
+    };
+
+    var doSendActual = function(ids) {
         busy = true;
         els.sendBtn.disabled = true;
         els.sendBtn.textContent = t('sending');
@@ -335,8 +661,11 @@ define(['core/ajax'], function(Ajax) {
             comment: (els.comment.value || '').trim()
         }).then(function(res) {
             renderResults(res);
+            if (hist.started && res && res.sent > 0) {
+                loadHistory(true);
+            }
         }).catch(function(err) {
-            showNotice((err && err.message) ? err.message : t('error_generic'));
+            openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
         }).then(function() {
             busy = false;
             els.sendBtn.disabled = false;
@@ -344,42 +673,266 @@ define(['core/ajax'], function(Ajax) {
         });
     };
 
+    // ---------- History tab. ----------
+
+    var fmtDate = function(ts) {
+        var d = new Date(Number(ts) * 1000);
+        if (!isFinite(d.getTime())) {
+            return '—';
+        }
+        try {
+            return new Intl.DateTimeFormat(undefined, {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            }).format(d);
+        } catch (err) {
+            return String(d);
+        }
+    };
+
+    var fmtTime = function(ts) {
+        var d = new Date(Number(ts) * 1000);
+        if (!isFinite(d.getTime())) {
+            return '—';
+        }
+        try {
+            return new Intl.DateTimeFormat(undefined, {
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(d);
+        } catch (err) {
+            return String(d);
+        }
+    };
+
+    var renderHistory = function() {
+        var html = '';
+        hist.rows.forEach(function(e) {
+            var ok = (e.status === 'sent');
+            var badge = ok
+                ? '<span class="mwa-gm-badge mwa-gm-badge-sent">' + esc(t('hist_state_sent')) + '</span>'
+                : '<span class="mwa-gm-badge mwa-gm-badge-error">' + esc(t('hist_bounced')) + '</span>';
+            html +=
+                '<tr>' +
+                '<td>' + esc(fmtDate(e.timesent)) + '</td>' +
+                '<td>' + esc(fmtTime(e.timesent)) + '</td>' +
+                '<td>' + esc(e.teachername || '') + '</td>' +
+                '<td>' + esc(e.studentname || '') + '</td>' +
+                '<td>' + badge + '</td>' +
+                '<td class="mwa-gm-subj">' + esc(e.subject || '') + '</td>' +
+                '</tr>';
+        });
+        els.histRows.innerHTML = html;
+        els.histEmpty.style.display = (hist.total === 0) ? '' : 'none';
+        els.histTable.style.display = (hist.rows.length > 0) ? '' : 'none';
+        els.histMore.style.display = (hist.offset < hist.total) ? '' : 'none';
+    };
+
+    var loadHistory = function(reset) {
+        if (hist.busy) {
+            return;
+        }
+        if (reset) {
+            hist.offset = 0;
+            hist.rows = [];
+            renderHistory();
+        }
+        hist.busy = true;
+        els.histMore.disabled = true;
+        callWS('block_mwa_dashboard_get_grades_mail_history', {
+            courseid: courseid,
+            status: hist.state,
+            groupid: groupid,
+            limit: HIST_PAGE,
+            offset: hist.offset
+        }).then(function(res) {
+            hist.total = (res && typeof res.total === 'number') ? res.total : 0;
+            var list = (res && res.entries) ? res.entries : [];
+            hist.rows = hist.rows.concat(list);
+            hist.offset = hist.rows.length;
+            renderHistory();
+        }).catch(function(err) {
+            openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
+        }).then(function() {
+            hist.busy = false;
+            els.histMore.disabled = false;
+        });
+    };
+
+    // ---------- Tabs and events. ----------
+
+    var switchTab = function(which) {
+        els.tabSend.classList.toggle('is-active', which === 'send');
+        els.tabHistory.classList.toggle('is-active', which === 'history');
+        els.panelSend.style.display = (which === 'send') ? '' : 'none';
+        els.panelHistory.style.display = (which === 'history') ? '' : 'none';
+        if (which === 'history' && !hist.started) {
+            hist.started = true;
+            loadHistory(true);
+        }
+    };
+
+    var bindEvents = function() {
+        els.tabSend.addEventListener('click', function() { switchTab('send'); });
+        els.tabHistory.addEventListener('click', function() { switchTab('history'); });
+
+        els.activity.addEventListener('change', function() {
+            var v = parseInt(els.activity.value, 10);
+            selSeq = (v > 0) ? v : null;
+            var act = currentActivity();
+            els.passmark.value = (act && Number(act.passmark) > 0) ? act.passmark : '';
+            els.passmark.disabled = !act;
+            refreshPassmarkHint();
+            if (filter !== 'all') {
+                setChipState('all');
+            }
+            syncAfterClassifyChange();
+        });
+
+        els.passmark.addEventListener('input', function() {
+            refreshPassmarkHint();
+            syncAfterClassifyChange();
+        });
+
+        els.chips.addEventListener('click', function(ev) {
+            var el = ev.target;
+            while (el && el !== els.chips) {
+                if (String(el.tagName ? el.tagName : '').toUpperCase() === 'BUTTON' && el.getAttribute('data-filter')) {
+                    if (!el.disabled) {
+                        onChipClick(el.getAttribute('data-filter'));
+                    }
+                    return;
+                }
+                el = el.parentNode;
+            }
+        });
+
+        els.search.addEventListener('input', function() {
+            searchText = (els.search.value || '').trim().toLowerCase();
+            applyView(false);
+        });
+
+        els.selectAll.addEventListener('click', function() { setAllVisible(true); });
+        els.deselectAll.addEventListener('click', function() { setAllVisible(false); });
+
+        els.rows.addEventListener('change', function(ev) {
+            var target = ev.target;
+            if (target && target.className && String(target.className).indexOf('mwa-gm-checkbox') !== -1) {
+                updateCount();
+            }
+        });
+
+        els.previewBtn.addEventListener('click', doPreview);
+        els.sendBtn.addEventListener('click', doSend);
+
+        els.histState.addEventListener('change', function() {
+            hist.state = els.histState.value;
+            loadHistory(true);
+        });
+        els.histMore.addEventListener('click', function() { loadHistory(false); });
+    };
+
+    // ---------- Data loading (get_grades + get_grades_send_options in parallel). ----------
+
+    var parseStudents = function(res) {
+        var rows = [];
+        try {
+            rows = JSON.parse(res.grades || '[]');
+        } catch (err) {
+            rows = [];
+        }
+        rawRows = [];
+        (rows || []).forEach(function(r) {
+            if (r && r.__mwa_type__ === 'student' && parseInt(r['User ID'], 10) > 0) {
+                rawRows.push({
+                    userid: parseInt(r['User ID'], 10),
+                    name: nameOf(r),
+                    total: r['Course total (Grade)'],
+                    totalmax: r['Course total max (Grade)'],
+                    raw: r
+                });
+            }
+        });
+    };
+
+    var finalizeStudents = function() {
+        students = [];
+        rawRows.forEach(function(s) {
+            var acts = {};
+            activities.forEach(function(a) {
+                acts[a.seq] = s.raw['act_' + a.seq];
+            });
+            students.push({
+                userid: s.userid,
+                name: s.name,
+                total: s.total,
+                totalmax: s.totalmax,
+                acts: acts
+            });
+        });
+        rawRows = [];
+    };
+
+    var checkReady = function() {
+        if (uiBuilt || !studentsReady || !metaReady) {
+            return;
+        }
+        uiBuilt = true;
+        finalizeStudents();
+        buildUI();
+        bindEls();
+        buildModal();
+        populateActivities();
+        buildRows();
+        bindEvents();
+        if (loadError) {
+            openAlert(t('error_title'), t('error_generic'));
+        }
+    };
+
+    var loadInitial = function() {
+        callWS('block_mwa_dashboard_get_grades', {
+            courseid: courseid,
+            groupid: groupid
+        }).then(function(res) {
+            parseStudents(res);
+        }).catch(function() {
+            loadError = true;
+        }).then(function() {
+            studentsReady = true;
+            checkReady();
+        });
+        callWS('block_mwa_dashboard_get_grades_send_options', {
+            courseid: courseid,
+            groupid: groupid
+        }).then(function(res) {
+            activities = (res && res.activities) ? res.activities : [];
+        }).catch(function() {
+            loadError = true;
+        }).then(function() {
+            metaReady = true;
+            checkReady();
+        });
+    };
+
     var init = function(params) {
         params = params || {};
         courseid = params.courseid ? parseInt(params.courseid, 10) : 0;
         groupid = params.groupid ? parseInt(params.groupid, 10) : 0;
-        str = params.str || {};
+        // The localised UI strings arrive via window.MWA_GRADEMAIL_STR (inline
+        // JSON rendered by enviarnotas.php). The params.str fallback keeps
+        // direct / legacy calls working too.
+        str = (typeof window.MWA_GRADEMAIL_STR === 'object' && window.MWA_GRADEMAIL_STR)
+            ? window.MWA_GRADEMAIL_STR
+            : (params.str || {});
 
         var root = document.getElementById('mwaGradesMailRoot');
         if (!root) {
             return;
         }
         els.wrap = root;
-        buildUI();
-        bindEls(root);
-
-        els.selectAll.addEventListener('click', function() {
-            checkboxes().forEach(function(box) {
-                box.checked = true;
-            });
-            updateCount();
-        });
-        els.deselectAll.addEventListener('click', function() {
-            checkboxes().forEach(function(box) {
-                box.checked = false;
-            });
-            updateCount();
-        });
-        els.rows.addEventListener('change', function(e) {
-            var target = e.target;
-            if (target && target.className && target.className.indexOf('mwa-gm-checkbox') !== -1) {
-                updateCount();
-            }
-        });
-        els.previewBtn.addEventListener('click', doPreview);
-        els.sendBtn.addEventListener('click', doSend);
-
-        loadStudents();
+        loadInitial();
     };
 
     return {init: init};

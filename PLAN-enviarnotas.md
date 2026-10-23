@@ -475,3 +475,635 @@ de las 3 fases siguen pendientes de verificar en una Moodle de prueba.
    subject/HTML contienen la nota del estudiante.
 2. Checklist manual en Moodle de prueba (criterios runtime de las 3 fases).
 3. Fase 5: `README.md` + `ESTRUCTURA.md` + changelog `4.3.1`.
+
+## 11. Punto de corte actual — sesión 22-oct-2026 (nuevo alcance pedido; servidor mapeado; frontend por implementar)
+
+> **Modo de trabajo acordado con el usuario:** **paso a paso, probando cada paso y con su
+> confirmación antes de avanzar** ("implementemos paso a paso y vamos probando, yo te confirmo").
+> Esta sección documenta (a) el alcance nuevo, (b) el estado exacto del código local y del
+> servidor, (c) cómo desplegar, (d) las decisiones de diseño abiertas y (e) el plan de ejecución.
+
+### 11.1 Alcance nuevo pedido por el usuario (prioritario, supera lo de §4)
+
+1. **Selector de Actividad** (drop-down): elegir qué actividad específica se está evaluando si
+   el curso tiene varias. **Backend ya listo** (§11.2).
+2. **Nota mínima de aprobación (pass mark)**: campo editable precargado con el `gradepass` de
+   Moodle de la actividad (si no hay → fallback 50% del máximo; todo editable en el campo).
+3. **Filtros rápidos en la tabla de estudiantes**: 🟢 Aprobados · 🔴 Reprobados ·
+   🟡 Sin entrega/pendientes (+ "Todos").
+4. **Historial de envíos (logs y auditoría)**: pestaña con fecha, hora, docente que envió,
+   estudiantes receptores y si se entregó o rebotó. **Backend ya listo** (§11.2).
+5. **Analizar si hacen falta más filtros** → decisión tomada: además de los botones 🟢🔴🟡 se
+   agrega **búsqueda por nombre** (la página no carga grupos, así que grupo queda fuera).
+6. **Confirmaciones bonitas y centradas**: reemplazar `window.confirm` / `window.alert` del JS
+   actual por un modal centrado con backdrop. Las strings `confirm_*` / `error_title` ya existen.
+
+**Decisión de diseño clave:** la nota de aprobación **NO cambia el contenido del correo/mensaje**
+(el correo siempre lleva nota global + desglose de TODAS las actividades, y así lo dice
+`gradesmail_confirm_passnote`). Se usa **solo** para la clasificación cliente (columna "Resultado"
++ filtros 🟢🔴🟡) y para el texto de confirmación. → **No hay que tocar los WS de
+`send_grades_mail` ni de `get_grades_mail_preview`**.
+
+### 11.2 Estado local del código (Git, verificado y commiteado en esta sesión)
+
+Repo dentro del folder del plugin: `...\moodle-block_mwa_dashboard\block_mwa_dashboard`
+rama `main` · commit inicial `408cb0b` "Initial commit: block_mwa_dashboard v4.3 (2026101901)".
+
+**✅ LISTO Y COMMITADO (backend nuevo; estaba sin commitear al iniciar la sesión):**
+
+| Archivo | Cambio |
+| --- | --- |
+| `classes/external.php` | + WS `get_grades_send_options()` (≈L1165-1293): `activities:[{seq, cmid, name, modname, grademax, passmark, hascustompassmark}]`; `seq` 1..N alineado con las columnas `act_N` de `api::get_grades()`; passmark = `gradepass` explícito si existe (`hascustompassmark=true`) o 50% de `grademax` si no. + WS `get_grades_mail_history()` (≈L1295-1432): auditoría `block_mwa_dashboard_messages` con `intervention_reason='Grades'`, con `limit`(1-100,def 25)/`offset` y filtro `status` `''|sent|error`, respeta `groupid`, orden `timesent DESC`, formatea fecha/hora con `userdate` (2 campos separados) y nombres según `fullnameformat`. |
+| `db/services.php` | Registrados `block_mwa_dashboard_get_grades_send_options` (read) y `block_mwa_dashboard_get_grades_mail_history` (read), ambos `ajax` + `loginrequired` |
+| `lang/en/...php` (152,931 B) | +37 strings `gradesmail_*` (lista §11.4) |
+| `version.php` | `2026101901` → **`2026102201`** (la subida a servidor dispara la upgrade del plugin y registra los 2 WS) |
+
+**❌ PENDIENTE (nada de esto se tocó aún):**
+
+| Archivo | Qué falta |
+| --- | --- |
+| `amd/src/enviarnotas.js` (15,073 B, **versión VIEJA**) | Re-escritura: pestañas [Enviar · Historial], select de actividad, campo passmark con hints, filtros 🟢🔴🟡+Todos, búsqueda por nombre, columna "Resultado de la actividad" con badge, modal centrado, alertas, pestaña historial con "Cargar más" y filtro de estado |
+| `amd/build/enviarnotas.min.js` (8,081 B) | Regenerar minificada tras re-escritura (minificado a mano, sin Grunt, igual que las otras 14) |
+| `enviarnotas.php` (4,132 B) | `$gmkeys[]`: añadir las 37 claves nuevas (hoy solo las 24 de la v1, L43-49) |
+| `lang/es/...php` (4,120 B) | +37 strings (hoy solo 40 `gradesmail_*` viejos) → **si no, el JS mostrará claves en crudo** |
+| `lang/pt_br/...php` (157,638 B) | +37 strings (consistencia EN/PT/ES) |
+| `styles/gradesmail.css` (5,071 B) | Estilos de tabs, chips de filtros con emoji, select/input, badges de resultado, tabla del historial, modal centrado con backdrop, alertas |
+
+### 11.3 Estado del servidor (verificado por SSH en esta sesión)
+
+**Acceso**
+- Sitio `https://medicionra.uniclaretiana.edu.co/` · Moodle `admin` / `Unicla.m&m.2026`
+- Servidor `192.168.25.4` · `proyectosmym` / `Unicla.002` · SSH OK · **tiene acceso a `docker`**,
+  pero **NO puede leer** el volumen del host (`/var/lib/docker/volumes/...` → `Permission denied`).
+- **Moodle corre en Docker (Bitnami)**: contenedor `moodle_app` (imagen `moodle-moodle`,
+  puertos 8080/8443), docroot **`/bitnami/moodle`** (volumen `moodle_moodle_data`);
+  moodledata = volumen `moodle_moodledata_data`.
+- **Moodle core:** `$version = 2025041401.00` → rama Moodle 5.x (usuario indica 5.0.1).
+- **Plugin en servidor:** `blocks/mwa_dashboard` con `version.php = 2026101901`
+  (= commit inicial local, **aún sin el backend nuevo**; verificar §11.6.1).
+- **DB:** `dbhost=192.168.25.7 dbname=moodle_db dbuser=moodle_user`, clave de 15 caracteres en
+  `/bitnami/moodle/config.php` (**NO copiarla a documentos**). Contenedor MySQL `capsu_mysql`
+  (mysql:8.0, 3306 publicado). `moodle_user` es ACL por host: desde `capsu_mysql` a `127.0.0.1`
+  → `Access denied`; **hay que consultar desde dentro de `moodle_app`** (PHP) o con el cliente
+  mysql del host si existe (no verificado).
+- Nginx: `nginx-proxy-manager` (`npm`) + `cloudflare_tunnel` en 80/443. **No hay PHP CLI en el
+  host** (sí dentro de `moodle_app`). Node local disponible (v24).
+
+**Contraste de tamaños local ↔ servidor (todo coincide, es la copia V1 ya desplegada):**
+
+| Archivo | Local | Servidor |
+| --- | --- | --- |
+| `enviarnotas.php` | 4,132 B | 4,132 B (owner 1000:1000) |
+| `amd/src/enviarnotas.js` | 15,073 B | 15,073 B |
+| `amd/build/enviarnotas.min.js` | 8,081 B | 8,081 B + residuo `enviarnotas.min.js.bak-20261020` (9,384 B) |
+
+⚠️ **Posible regresión ACTIVA en la página desplegada:** hoy `gradesmail_confirm_send` en
+`lang/en` vale `'Send now'` (nuevo label del modal), pero el JS VIEJO aún en producción usa esa
+misma clave como texto del `window.confirm` (`enviarnotas.js` L325 + `$gmkeys` de
+`enviarnotas.php`) → la confirmación del botón Enviar diría "Send now" en inglés.
+Verificar con:
+`docker exec moodle_app grep -n "gradesmail_confirm_send" /bitnami/moodle/blocks/mwa_dashboard/lang/*/block_mwa_dashboard.php`
+y si el servidor tiene la misma línea, **restablecer el texto largo original** (o que el JS nuevo
+use `confirm_send` SOLO como botón del modal y otra clave para el mensaje).
+
+**Procedimiento de deploy (verificado en inventario, no ejecutado en esta sesión):**
+1. `Set-SCPItem -ComputerName 192.168.25.4 -Credential $cred -Path <archivo> -Destination /tmp`
+   (Posh-SSH instalado; **no existe** `Set-SCPFile` en esta versión, y **no acepta** `-NoEOL`).
+2. `docker cp /tmp/<archivo> moodle_app:/bitnami/moodle/blocks/mwa_dashboard/<ruta>`
+   (usar `/` para carpetas `amd/src/`, `amd/build/`, `lang/es/`, etc.).
+3. Si se subió `version.php` con `2026102201`, la siguiente petición web de Moodle corre la
+   upgrade del plugin → **verificar** que los 2 WS aparecieron en `mdl_externalfunctions` (§11.6.2).
+4. Limpiar caché del navegador (el JS carga con `?ver=` de la versión del plugin) antes de probar.
+
+### 11.4 Las 37 cadenas nuevas (hechas en `lang/en`; faltan `es` y `pt_br`)
+
+`gradesmail_tab_send`, `tab_history`, `evalselect`, `passmin`, `passmin_custom`,
+`passmin_fallback`, `passmin_none`, `filter_all`, `filter_passed`, `filter_failed`,
+`filter_pending`, `searchplaceholder`, `resultcol`, `result_passed`, `result_failed`,
+`result_pending`, `hist_title`, `hist_empty`, `hist_more`, `hist_state_all`,
+`hist_state_sent`, `hist_state_error`, `col_date`, `col_time`, `col_teacher`, `col_status`,
+`col_subject`, `hist_bounced`, `confirm_title`, `confirm_body` (placeholders `{count}`,
+`{activity}`, `{passnote}`), `confirm_passnote`, `confirm_noactivity`, `confirm_cancel`,
+`confirm_send` (= `Send now`), `alert_noselection`, `error_title`, `error_generic`.
+
+### 11.5 Contrato de los WS nuevos (para escribir el JS sin adivinar)
+
+- `block_mwa_dashboard_get_grades_send_options {courseid, groupid=0}` →
+  `{activities: [{seq, cmid, name, modname, grademax, passmark, hascustompassmark}]}`
+  (`grademax=0` / `passmark=0` cuando la actividad no tiene grado).
+- `block_mwa_dashboard_get_grades_mail_history {courseid, status='', groupid=0, limit=25, offset=0}` →
+  `{total, entries: [{recordid, timesent, date, time, teacherid, teachername, studentid,
+  studentname, status('sent'|'error'), send_type('both'), subject(≤90 c), moodlelinked}]}`
+- Recordatorio (WS viejo en uso): `get_grades` → filas `{__mwa_type__:'student', 'User ID',
+  'First name', 'Last name', 'Course total (Grade)', 'Course total max (Grade)', act_1..act_N}`
+  + fila meta `{__mwa_type__:'activity_names', act_i, act_cmid_i, act_module_i}`.
+
+### 11.6 Verificaciones para ARRANCAR la próxima sesión (sin tocar nada todavía)
+
+1. **¿El servidor tiene ya el backend nuevo?** (¿o solo está en local?)
+   ```bash
+   docker exec moodle_app sh -c 'grep -c "function get_grades_send_options\|function get_grades_mail_history" /bitnami/moodle/blocks/mwa_dashboard/classes/external.php; grep -c "get_grades_send_options" /bitnami/moodle/blocks/mwa_dashboard/db/services.php'
+   ```
+   (esperado `0` → hay que desplegar `external.php` + `services.php` + `version.php` **antes** de
+   probar el dropdown/historial).
+2. **¿Están registrados los 2 WS en la DB?** Receta (dentro de `moodle_app`, sin exponer clave):
+   1. Crear localmente `db_probe.php` que lea `dbhost/dbname/dbuser/dbpass` de
+      `/bitnami/moodle/config.php` con regex, abra PDO y corra las consultas.
+   2. `Set-SCPItem` → `/tmp/db_probe.php` en el host →
+      `docker cp /tmp/db_probe.php moodle_app:/tmp/db_probe.php && docker exec moodle_app php /tmp/db_probe.php`.
+   Consultas:
+   ```sql
+   SELECT component, plugin, version FROM mdl_plugin WHERE component='block_mwa_dashboard';
+   SELECT name FROM mdl_externalfunctions WHERE name LIKE 'block_mwa_dashboard_%' ORDER BY name;
+   SELECT id, shortname, fullname FROM mdl_course WHERE id>1 AND (fullname LIKE '%Prueba funcional%' OR fullname LIKE '%Momento%' OR shortname LIKE '%Prueba%' OR shortname LIKE '%Momento%') ORDER BY id LIMIT 20;
+   ```
+   (la última identifica el curso **"Prueba funcional – Momento 1 RA"** que se verá en la prueba).
+3. **Regresión `confirm_send`** en `lang/en` del servidor (§11.3 ⚠️).
+4. **Preguntar al usuario** las 3 decisiones de §11.7 y que confirme el plan de §11.8.
+
+### 11.7 Decisiones de diseño ABIERTAS (preguntar al usuario; primera opción = mi recomendación)
+
+1. **¿Si NO se elige ninguna actividad, con qué nota se clasifica 🟢🔴🟡?** (el passmark existe
+   solo por actividad; el total del curso no tiene passmark en el backend actual)
+   - (a) *Recomendado:* el select lista **solo actividades**; si un curso no tiene actividades
+     selectables, se deshabilitan el select y los filtros con un aviso; el correo siempre
+     envía global + desglose de todas las actividades.
+   - (b) Agregar opción "Resultados globales" que clasifica contra el passmark del total del
+     curso → **requiere tocar backend** (`get_grades_send_options`).
+   - (c) Opción "Resultados globales" pero con los filtros deshabilitados (solo enviar correo).
+2. **Semántica exacta de los filtros 🟢🔴🟡**
+   - (a) *Recomendado:* **filtran las filas visibles Y marcan el checkbox** de ese grupo
+     (deseleccionando los del resto); "Todos" vuelve a ver todos sin tocar la selección.
+   - (b) Solo marcan (no ocultan filas).
+   - (c) Solo filtran (no tocan checkboxes).
+3. **Flujo de prueba**
+   - (a) *Recomendado:* por cada paso → desplegar al servidor → probar en el navegador con
+     `admin/Unicla.m&m.2026` → el usuario hace su check y confirma → siguiente paso.
+   - (b) Construir todo primero y probar en bloque al final.
+
+### 11.8 Plan de ejecución de la próxima sesión (paso a paso, con confirmación entre pasos)
+
+- **Paso 0 — Verificar servidor** (recetas §11.6) + preguntar §11.7. **No tocar nada** hasta
+  tener respuestas.
+- **Paso 1 — Cadenas:** `lang/es` + `lang/pt_br` (+37 strings c/u).
+- **Paso 2 — `enviarnotas.php`:** `$gmkeys[]` ← 37 claves nuevas (sin esto el JS las ve en crudo).
+- **Paso 3 — Deploy de backend** (`external.php` + `services.php` + `version.php`) si §11.6.1-2
+  lo requieren → comprobar `mdl_externalfunctions` y probar los 2 WS. *(pausa: usuario confirma)*
+- **Paso 4 — Frontend "Enviar notas":** tabs, select de actividad, campo passmark, filtros
+  🟢🔴🟡+Todos, búsqueda por nombre, columna "Resultado" con badge + `styles/gradesmail.css`
+  → `.min.js` → deploy → probar en el curso **"Prueba funcional – Momento 1 RA"**. *(usuario confirma)*
+- **Paso 5 — Pestaña "Historial":** `get_grades_mail_history`, tabla, filtro de estado,
+  "Cargar más" → deploy → probar. *(usuario confirma)*
+- **Paso 6 — Modales:** confirmación centrada + alerta de error (sustituyen
+  `window.confirm`/`window.alert`) → deploy → probar. *(usuario confirma)*
+- **Paso 7 — Cierre:** `php -l` en los PHP tocados, `node --check` en ambos JS, commit Git con
+  resumen, update de este plan. (Si queda tiempo: antigua Fase 4 tests / Fase 5 docs.)
+
+### 11.9 Notas técnicas que NO perder (descubiertas en esta sesión)
+
+- `enviarnotas.php` define `$gmkeys[]` (L43-49, **24 claves hoy**) y el JS las consume como
+  `str[key]`; el prefijo `gradesmail_` lo agrega PHP (`get_string('gradesmail_'.$gmkey, ...)`).
+  **Las claves nuevas deben meterse ahí o el JS las verá en crudo.**
+- El JS viejo usa `define(['core/ajax'], ...)` → **este core NO tiene `core/webservices`**;
+  seguir con `Ajax.call([{methodname, args}])[0]`.
+- `amd/build/*.min.js` se minifican a mano (sin Grunt en este repo); hay un `.bak` residual
+  **solo en el servidor** (no importarlo).
+- `api::get_grades()` solo lista estudiantes con rol `student` asignado en el contexto del curso
+  (si el curso no tiene ese rol → `[]`, la lista queda vacía).
+- El correo/mensaje se construyen en el **idioma del estudiante** (swap de `$USER` en
+  `send_grades_mail` y en `get_grades_mail_preview`) — no romperlo si se toca ese código.
+- Capabilities de todos los WS: `block/mwa_dashboard:view` +
+  `block/mwa_dashboard:manageinterventions` (ya definidas en `db/access.php`, archetypes
+  teacher/editingteacher/manager).
+- **Código sin commitear al final de cada paso:** hacer commit incremental (ya se hizo uno de
+  esta sesión con el backend nuevo; repetir el patrón en cada paso).
+
+## 12. Punto de corte — sesión 22-oct-2026 (Paso 3 — Deploy de backend)
+
+**Estado: backend DESPLEGADO, VERIFICADO EN BD Y CON SMOKE TEST CLI PASS (ver §13).**
+Se corrigió en el camino un bug real de SQL en `get_grades_mail_history` (LIMIT/OFFSET
+con parámetros nombrados → error de sintaxis en MariaDB/mysqli).
+
+| # | Tarea | Estado |
+| --- | --- | --- |
+| 0 | Verificar servidor (§11.6) + decisiones §11.7 | ✅ |
+| 1 | Strings ES/PT (+37 c/u) y EN listo | ✅ (local) |
+| 2 | `enviarnotas.php` `$gmkeys[]` 24 → 59 claves | ✅ (local) |
+| 2b | Bug latente `lang/en` L2200 (`gradesmail_confirm_passnote` sin `;`) | ✅ corregido |
+| — | `php -l` OK (external.php, services.php, version.php, 3×lang, external.php de clases) | ✅ |
+| 3 | **Deploy** `classes/external.php` + `db/services.php` + `version.php` (2026102201) a `moodle_app` | ✅ |
+| 3 | Upgrade del plugin ejecutada (`2026102201: éxito`) | ✅ |
+| 3 | **Verificación BD**: versión + los 2 WS en `mdl_external_functions` | ✅ PASS/PASS |
+| 3 | **Smoke test** de los 2 WS con curso de prueba (id 2) | ✅ **PASS/PASS vía ruta (a) CLI — ver §13** (hallazgos nuevos: no existe la función global `call_external_function` en Moodle 5 + **bug real corregido** en `get_grades_mail_history`) |
+
+### 12.1 Qué se subió y cómo quedó en el servidor
+
+- **Solo 3 archivos** (los de backend), vía `Set-SCPItem` → `/tmp` (host) → `docker cp` →
+  `moodle_app:/bitnami/moodle/blocks/mwa_dashboard/` (rutas finales
+  `classes/external.php` 154,973 B · `db/services.php` 7,191 B · `version.php` 1,153 B).
+- Ownership final: **`1000:1000`** (intento de `chown 1001:0` no quedó aplicado; da igual:
+  modos 644/664 → httpd (uid **1001**) los lee igual). Archivo original del bloque:
+  `block_mwa_dashboard.php` = `1001:0`.
+- Verificación por grep dentro del contenedor: `function get_grades_send_options` = **3**,
+  `function get_grades_mail_history` = **3** (método + `_parameters` + `_returns`),
+  `block_mwa_dashboard_get_grades_send_options` en `services.php` = 1, …`_mail_history` = 1,
+  `version.php` = `2026102201`.
+- **NO se subió**: `lang/es`, `lang/pt_br`, `enviarnotas.php`, `amd/*`, `styles/*` (siguen V1
+  en producción). Riesgo conocido `confirm_send` (§11.3 ⚠️) → resolverlo en el Paso 4 junto
+  con el JS nuevo.
+
+### 12.2 Upgrade del plugin (Moodle 5.0.1 CLI)
+
+Comando que funciona (desde el host, vía SSH):
+
+```bash
+docker exec moodle_app sh -c "cd /bitnami/moodle && php admin/cli/upgrade.php --non-interactive"
+```
+
+- ❌ `-n` / `-v` ya **no existen** en Moodle 5 → `Opciones no reconocidas` (usar
+  `--non-interactive`; `-nv` juntado tampoco).
+- ❌ `-u moodle` **no existe** usuario `moodle` en el contenedor (`unable to find user moodle`).
+  El usuario web es **uid 1001** (httpd de Bitnami). La CLI corre bien como root (default).
+- Salida clave (español): `-->block_mwa_dashboard` · `++ 2026102201: éxito (0,01 segundos) ++` ·
+  `Actualización a través de línea de comandos desde 5.0.1 (Build: 20250609) (2025041401) …
+  finalizada con éxito`.
+- PHP CLI del contenedor: `/opt/bitnami/php/bin/php` **8.2.29**, módulos `mysqli mysqlnd PDO
+  pdo_mysql pdo_sqlite`. php.ini: `/opt/bitnami/php/lib/php.ini`, `conf.d` vacío.
+  ⚠️ No hay php CLI en el host (confirmado de nuevo).
+
+### 12.3 Verificación en BD (resultado definitivo — script en Moodle CLI)
+
+Resultado real (script `p3_final*.php` ejecutado dentro de `moodle_app`):
+
+```
+== config_plugins: plugin=block_mwa_dashboard ==
+ - name=version value=2026102201
+version_registrada='2026102201'
+== external_functions block_mwa_dashboard_* ==
+ … 18 funciones del bloque (incluye get_grades_mail_preview y send_grades_mail) …
+ -- requisitos del Paso 3 --
+PASS  block_mwa_dashboard_get_grades_send_options
+PASS  block_mwa_dashboard_get_grades_mail_history
+== cursos candidatos ('Prueba') ==
+id=2 short=PRUEBA-RA full=Aula de Prueba - Medición de Resultados de Aprendizaje
+```
+
+**Receta definitiva de BD (usar en adelante, reemplaza §11.6.2):**
+
+- ❌ **No usar PDO puro**: el DSN `mariadb:` falla con `could not find driver`
+  (PHP 8.2/pdo_mysql solo acepta prefijo `mysql:`), y aun mapeando a `mysql:` el login crudo
+  con las credenciales extraídas de `config.php` dio
+  `Access denied for user 'moodle_user'@'192.168.25.4'`.
+- ❌ **No usar `capsu_mysql`** para diagnosticar Moodle: ese MySQL **no es la BD de Moodle**
+  (usuarios: `capsu_user@%`, `root` — **no existe `moodle_user`**).
+- ✅ **Usar el bootstrap de Moodle**: CLI script `define('CLI_SCRIPT', true);
+  chdir('/bitnami/moodle'); require('/bitnami/moodle/config.php');` → `$DB->get_records...`.
+  Subir el script con el mismo patrón SCP + `docker cp` + `docker exec moodle_app php /tmp/...`.
+
+**Esquema de Moodle 5.0.1 (diferente a lo asumido en §11.6.2):**
+
+- ❌ **NO existe la tabla `mdl_plugin`** → la versión del plugin está en
+  **`config_plugins`** (columnas `id, plugin, name, value`):
+  `WHERE plugin='block_mwa_dashboard' AND name='version'`.
+- ✅ La tabla **SÍ se llama `mdl_external_functions`** (el usuario tenía razón; en §11.6.2
+  estaba escrito mal `mdl_externalfunctions`). **Sin columna `type`**; columnas útiles
+  `name, disabled, crontabid, readonly`.
+- `get_records()` / `get_records_sql()` devuelven **objetos `stdClass`** → `$r->name`, no
+  `$r['name']` (si no: `Cannot use object of type stdClass as array`).
+
+### 12.4 ⚠️ Pendiente del Paso 3: smoke test HTTP de los 2 WS
+
+Intentos fallidos (documentados para no repetirlos):
+
+1. **Token móvil** `POST /login/token/services.php/json/moodle_mobile_app` → **404**
+   (servicio de token deshabilitado en el sitio).
+2. **Login por sesión + curl** (`POST /login/index.php` con cookies jar) → redirige a
+   `login/index.php?loginredirect=1` y muestra **"Acceso inválido. Por favor, intente otro"**
+   → **la autenticación por curl fue rechazada** (la clave dada es la correcta en el navegador).
+   Posibles causes a investigar: protección anti-bot/Cloudflare en el POST, 2FA, o falta de
+   algún campo/referer. Dato útil: en la página de login el `sesskey` **NO** está en un input
+   oculto, está en el JSON de config (`"sesskey":"W3K6QpYzCX"`).
+3. El endpoint AJAX correcto para llamar WS con sesión es
+   `/webservice/ajax/service.php?sesskey=<key>` con **body = array JSON**
+   `[{"name":"…","args":{…}}, …]` (guionete en `p3_ws_smoke.ps1`, ya preparado con este
+   formato; solo falta loguearse).
+
+**Rutas para retomar (por orden de recomendación):**
+
+- **(a) Smoke test por CLI (recomendado, no depende de HTTP):** script dentro de
+  `moodle_app` con `CLI_SCRIPT` + `config.php`, `$USER = get_admin()` y luego
+  `call_external_function('block_mwa_dashboard_get_grades_send_options', ['courseid'=>2,'groupid'=>0])`
+  y `call_external_function('block_mwa_dashboard_get_grades_mail_history', ['courseid'=>2,'status'=>'','groupid'=>0,'limit'=>5,'offset'=>0])`
+  (importar `lib/externallib.php`) → `var_export` de la respuesta. Es el mismo código de los WS
+  (parámetros + lógica + capabilities con admin) sin la capa HTTP.
+- **(b) Arreglar el login por curl** (UA de navegador + Referer, o probar admin/clave
+  manualmente en el navegador para descartar 2FA) y reusar `p3_ws_smoke.ps1`.
+- **(c) Validar en el E2E real del Paso 4** (el JS de la página llamará exactamente estos 2
+  WS).
+
+### 12.5 Hallazgos de entorno de esta sesión (NO perder)
+
+| Hallazgo | Detalle |
+| --- | --- |
+| PowerShell/Posh-SSH | `Import-Module Posh-SSH` falla con el policy default (error de `.ps1xml`) → correr `powershell -NoProfile -ExecutionPolicy Bypass -File <script>`; el módulo **no se auto-importa** en la sesión del harness |
+| `Set-SCPItem` v4.0 | **NO acepta array en `-Path`** (`CannotConvertArgument`) → iterar archivo por archivo |
+| `Set-SCPItem` overwrite | **NO sobrescribe** el archivo remoto existente (comprobado: el host dejó el archivo viejo 2017 B con timestamp antiguo) → usar **nombre remoto nuevo en cada subida** (patrón `p3_*_vN.php`) |
+| `rm` en `/tmp` del host | Los archivos SCP creados **no se pueden borrar** como `proyectosmym` (`Operation not permitted`) → limpieza pendiente (§12.6); dentro del contenedor `rm -f` funciona |
+| Escape en PowerShell | `\` como continuación es bash (no PS); `\"` tampoco funciona → comandos en **una línea** o archivos `.ps1`/`.sh` subidos |
+| Docker | `docker exec` sin `-u` = root (funciona); **usuario `moodle` no existe**; web = uid **1001**; owner original del plugin = `1000:1000` o `1001:0` (mixto, da igual por 644) |
+| Moodle 5 CLI | `admin/cli/upgrade.php --non-interactive` (sin `-n/-v`); salida en español |
+| Moodle 5 esquema | Sin `mdl_plugin` → versiones en `config_plugins`; `mdl_external_functions` sin columna `type`; filas como `stdClass` |
+| BD real | `192.168.25.7` / `moodle_db` / `moodle_user`; **`capsu_mysql` NO es la BD de Moodle**; PDO crudo no sirve (§12.3) |
+| Moodle CLI PHP | `/opt/bitnami/php/bin/php` 8.2.29 con `pdo_mysql` cargado |
+| Sitio | Servicio de tokens WS móvil **404**; login por curl **rechazado**; `sesskey` en JSON de la página login |
+| Curso de prueba | **id=2** · shortname `PRUEBA-RA` · "Aula de Prueba - Medición de Resultados de Aprendizaje" ✅ (existe y coincide) |
+
+### 12.6 Limpieza pendiente (al retomar)
+
+- Host `192.168.25.4` `/tmp/`: `p3_probe.php`, `p3_probe_v2..v4.php`, `p3_probe_v*.php`,
+  `p3_diag_v1.sh`, `p3_grants_v1.sh`, `p3_tables_v1.php`, `p3_final_v*.php`, `p3_body.json`
+  → borrar (probablemente requiera root: `sudo rm -f /tmp/p3_*` o desde otra sesión).
+- Contenedor `moodle_app:/tmp/` → ya limpio (`rm -f` OK en todos los runs).
+- **NO dejar** scripts temporales dentro de `blocks/mwa_dashboard/` (no se subió ninguno).
+- Local: scripts `p3_*.ps1/.php/.sh` en `C:\Users\Christian\AppData\Local\Temp\opencode\`
+  (reusables; `p3_ws_smoke.ps1` y `p3_final.php` sirven para retomar).
+
+### 12.7 Próximos pasos (orden exacto al retomar la próxima sesión)
+
+1. **Terminar Paso 3**: smoke test de los 2 WS por ruta (a) CLI recomendada (§12.4) sobre el
+   curso id 2. *(usuario confirma)*
+2. **Paso 4 — Frontend "Enviar notas"**: reescribir `amd/src/enviarnotas.js` (tabs, select de
+   actividad, passmark, filtros 🟢🔴🟡+Todos, búsqueda, columna Resultado, modal centrado),
+   regenerar `.min.js`, ampliar `styles/gradesmail.css`, **subir junto con `lang/es` +
+   `lang/pt_br` + `enviarnotas.php` (59 claves)** → probar en curso id 2. *(usuario confirma)*
+   > Nota: al subir la lang nueva, `gradesmail_confirm_send` pasa a `Send now` (label del
+   > modal) — subir lang + JS nuevo **juntos** para no romper la confirmación (§11.3 ⚠️).
+3. **Paso 5 — Pestaña "Historial"** (`get_grades_mail_history` → tabla, filtro, cargar más).
+4. **Paso 6 — Modales** (confirm/alert centrados).
+5. **Paso 7 — Cierre**: `php -l` + `node --check`, commit Git incremental, update de este plan.
+
+---
+
+## 13. Punto de corte — sesión 22-oct-2026 (Paso 3 CERRADO: smoke test CLI PASS)
+
+**Estado: PASS/PASS en los 2 WS sobre curso id 2**, usando la ruta (a) recomendada
+(§12.4): invocar directamente el método estático público del WS con `$USER = get_admin()`
+dentro de `moodle_app`. Además, el smoke test **descubrió y forzó a corregir un bug real**
+de `get_grades_mail_history` (LIMIT/OFFSET con parámetros nombrados → error de sintaxis
+MariaDB). Verificación final con sha256 de `classes/external.php` = local.
+
+> **Decisión de diseño (reutilizar en adelante):** en Moodle 5 **NO existe** la función
+> global `call_external_function()` (la receta literal de §12.4(a) falla). El equivalente
+> funcional de "llamar un WS sin la capa HTTP" es invocar el método estático público de la
+> clase del WS directamente (mismo `validate_parameters` + lógica + capabilities):
+> `\block_mwa_dashboard\external::get_grades_send_options(2, 0)`.
+> `core\external\external_api::call_external_function()` **sí existe** pero exige sesión
+> web (isloggedin + sesskey), por lo que **NO sirve para CLI**.
+
+### 13.1 Resultados (curso id 2 — PRUEBA-RA)
+
+- [x] **`get_grades_send_options {courseid:2, groupid:0}`** → PASS. Devuelve
+      `activities:[{seq:1, cmid:2, name:"Prueba funcional - Momento 1 RA", modname:"quiz",
+      grademax:10, passmark:6, hascustompassmark:true}]`. (passmark explícito 6/10, no el
+      fallback 50%).
+- [x] **`get_grades_mail_history {courseid:2, status:"", groupid:0, limit:5, offset:0}`**
+      → PASS. `total:9`, 5 entradas con campos correctos (`date`, `time`, `teachername`,
+      `studentname`, `status:"sent"`, `send_type:"both"`, `subject`, `moodlelinked:true`).
+- [x] **Contexto `get_grades` (WS existente)**: 7 estudiantes matriculados (3 con nota: 7, 3,
+      y una; 1 sin nota), 1 actividad gradeable (seq 1 = act_1) — **alineado con el `seq`**
+      del WS de opciones.
+- (Los criterios runtime de `send_grades_mail` y `get_grades_mail_preview` quedan cubiertos
+      por la E2E real del Paso 4, ya que el JS nuevo llamará exactamente esos WS.)
+
+### 13.2 Bug real corregido (fuerza a actualizar el backend desplegado)
+
+- **Síntoma:** `get_grades_mail_history` → `dml_read_exception: … syntax … near ''5' OFFSET '0''`.
+- **Causa:** `get_records_sql('… LIMIT :lim OFFSET :off', …)` — el driver mysqli cita los
+  parámetros LIMIT/OFFSET como cadenas y MariaDB rechaza `'OFFSET '0''`.
+- **Fix (aplicado en `classes/external.php`, ~L1369):** inline de enteros validados
+  (`' LIMIT ' . $limit . ' OFFSET ' . $offset`, `$limit`/`$offset` ya son int) + comentario
+  `// NOTE: LIMIT-OFFSET…` explicando el porqué. Regla para el plugin: **nunca** usar
+  parámetros nombrados en `LIMIT`/`OFFSET`.
+- **Verificado:** `php -l` OK; redeployado al servidor y **sha256 del servidor = local**
+  (`5e9513a8…bee21b`); smoke test de `get_grades_mail_history` pasó tras el fix (fallaba antes).
+- **Importante:** esto es un **cambio de backend real** sobre la v1 desplegada (v1 no tenía
+  estos WS). El servidor ahora tiene `external.php` con el fix (sha256 confirmado);
+  `services.php`/`version.php` ya estaban en 2026102201.
+
+### 13.3 Limpieza adicional (sumar a §12.6)
+
+- Host `/tmp`: quedaron `p3_smoke_ws_v2.php`, `p3_ext_fix_v1.php` (y versiones previas)
+  → `rm` como `proyectosmym` → **Operation not permitted** (mismo que §12.6; borrar como
+  root: `sudo rm -f /tmp/p3_*`).
+- Contenedor `moodle_app:/tmp`: `p3_smoke_ws_v1.php` NO se pudo borrar como uid
+  (sticky-bit) → borrar con `docker exec -u root moodle_app rm -f`.
+
+### 13.4 Hallazgos de entorno adicionales (adicionar a §12.5)
+
+| Hallazgo | Detalle |
+| --- | --- |
+| Moodle 5 sin `call_external_function()` global | Ruta CLI recomendada (y usada): método estático público de la clase del WS + `global $USER; $USER = get_admin();`. `core\external\external_api::call_external_function()` exige sesión web → no sirve CLI |
+| `docker exec` sin `-u` = uid 1001 | No puede borrar archivos de otros usuarios en `/tmp` (sticky-bit) → usar `docker exec -u root` para `rm` |
+| PowerShell: `"` dentro de string `"…"` | Se escapa con backtick `` `" ``, **no** con `\` (un `\` es carácter literal en PS) |
+| Bug mysqli LIMIT/OFFSET | Parámetros nombrados citados como string → error MariaDB. Usar enteros inline validados |
+| Curso id 2 (datos reales) | 7 estudiantes, 1 quiz gradeable (cmid 2, máx 10, pass 6), 9 envíos históricos de auditoría |
+
+### 13.5 Siguiente — Paso 4 (frontend «Enviar notas»)
+
+Reescribir `amd/src/enviarnotas.js` (tabs Enviar/Historial, select de actividad, campo
+passmark, filtros 🟢🔴🟡+Todos, búsqueda, columna Resultado, modal centrado), regenerar
+`.min.js`, ampliar `styles/gradesmail.css`, **subir junto con `lang/es` + `lang/pt_br` +
+`enviarnotas.php` (59 claves)** → probar en curso id 2.
+⚠️ No separar la subida de lang del JS: `gradesmail_confirm_send` pasa a `Send now`
+(label del modal) y el JS viejo la usaba como texto de `window.confirm` (§11.3 ⚠️).
+
+---
+
+## 14. Punto de corte — sesión 22-oct-2026 (Paso 4 — EN CURSO: investigación completa, código pendiente)
+
+**Estado: Paso 4 APROBADO por el usuario («Arranca Paso 4»). Investigación y diseño
+COMPLETOS; el código del JS v2 NO se escribió aún** (la sesión se cortó justo antes del
+`write` de `amd/src/enviarnotas.js`). Todo lo investigado queda aquí para retomar sin
+re-leer archivos.
+
+### 14.1 Verificaciones hechas antes de escribir el v2
+
+- [x] `amd/src/enviarnotas.js` v1 (15,073 B, 386 líneas) leído completo → base para el v2
+      (se conserva: `callWS` con `Ajax.call([...])[0]` (§11.9), `t()`, `esc()`, `fmt()`,
+      `isnum()`, `gradeCell()`, `nameOf()`, `channelMark()`, `renderResults()`, patrón
+      `els.wrap.innerHTML` + `bindEls()`).
+- [x] `lang/en` (líneas 2151-2206), `lang/es` (56-103) y `lang/pt_br` (2162-2209): las 37
+      strings nuevas existen y coinciden con las 35 claves extra de `$gmkeys`
+      (las otras 2 son `button`/`page_desc`/`jsnotice` de PHP). Placeholders de
+      `confirm_body`: `{count}`, `{activity}`, `{passnote}`.
+- [x] `classes/api.php` (L1047-1080): fila de estudiante trae `act_{seq}` con **`'-'`
+      (dash) cuando no hay nota** → `isnum()` del v2 debe tratar `'-'` como no-numérico
+      (el v1 no lo hacía; solo afectaba al total, ahora afecta también a los filtros).
+- [x] `styles/gradesmail.css` v1 (5,071 B, 277 líneas) leído completo → el v2 solo
+      **agrega** clases (no rompe las existentes).
+- [x] `enviarnotas.php` NO requiere cambios: sus 59 claves cubren todo lo que usará el
+      v2 (verificado: tab_*, evalselect, passmin*, filter_*, searchplaceholder,
+      result*, hist_*, col_*, confirm_*, alert_noselection, error_*). La string v1
+      `noselection` queda sin uso (el v2 usa `alert_noselection`).
+- [x] `lang/es` y `lang/pt_br` listos en local (solo falta SUBIRLOS con el JS).
+
+### 14.2 Decisiones de diseño del v2 (cerradas; no re-discutir)
+
+1. **Módulo**: sigue siendo `define(['core/ajax'])` + ES5 (`var`, `function`) como todo el
+   plugin; sin `core/webservices` (§11.9).
+2. **Estado global**: `students[]` ({userid, name, total, totalmax, acts:{seq:valor}}),
+   `meta[]` (del WS send_options), `selSeq`, `filter` ('all'|'passed'|'failed'|'pending'),
+   `searchText`, `rowEls{uid→{tr,box,badge}}`, flags de historial (`histStarted/Offset/Total/State`).
+3. **Carga doble**: `get_grades` + `get_grades_send_options` en paralelo; la UI se arma
+   cuando ambas terminan (flags `studentsReady`/`metaReady` + `checkReady()`).
+4. **Select de actividad**: solo lista las actividades del WS; vacío+disabled si no hay.
+   Al cambiar → precarga passmark (`custom`/`fallback`), re-clasifica y resetea filtro a
+   'Todos' (documentado: no toca la selección).
+5. **Passmark**: precargado del WS (`passmark`/`hascustompassmark`); hint según estado
+   (`passmin_custom`/`passmin_fallback`/`passmin_none`); si `grademax=0` → campo vacío
+   habilitado (se define manual) con hint `passmin_none`. Sin actividad → disabled.
+6. **Filtros 🟢🔴🟡** (decisión §11.7-2(a)): muestran SOLO ese grupo Y marcan sus
+   checkboxes (deseleccionando el resto); **'Todos'** restaura la vista sin tocar la
+   selección; se re-aplican automáticamente al cambiar passmark/actividad. Chips
+   disabled cuando passmark≤0 (sin clasificación posible). Punto pendiente de decisión:
+   semántica de "Seleccionar todos" con filtro activo → **decisión tomada: opera sobre
+   las filas visibles** (filtro ∩ búsqueda).
+7. **Búsqueda por nombre**: solo afecta visibilidad (no toca checkboxes); case-insensitive.
+8. **Columna "Resultado de la actividad"**: badge (`mwa-gm-badge-passed/failed/pending`)
+   recalculado en cada cambio de actividad/passmark; sin actividad o sin passmark →
+   dash neutro (`mwa-gm-dash`, sin string nueva).
+9. **Modal centrado** (reemplaza `window.confirm`/`alert`): un único `<div>` creado lazy
+   y agregado al root después de `buildUI()`; backdrop + diálogo; botones
+   `confirm_cancel` (sec) y `confirm_send` (primary, label); Escape y backdrop cierran;
+   foco en el botón primario (o en cancel si es solo alert). Confirmación usa
+   `confirm_body` con `{count}` + `{activity}` (nombre, o `confirm_noactivity` si no hay
+   actividad) + `{passnote}` = `confirm_passnote` solo si passmark>0. Alerts
+   (sin selección / error WS) usan `error_title` + `alert_noselection`/`error_generic`.
+10. **Historial** (pestaña, carga perezosa al primer switch): WS
+    `get_grades_mail_history` (limit 25, offset creciente), filtro de estado
+    (hist_state_all/sent/error), "Cargar más" visible si `offset < total`, empty state
+    `hist_empty`; fila = fecha/hora formateadas con `Intl.DateTimeFormat(undefined, …)`
+    desde `timesent` (epoch) — el `date`/`time` del server en ES vienen partidos raro
+    ("22" / "de octubre de 2026, 07:48", ver §13.1 ⚠️), docente, estudiante, badge estado
+    (`hist_state_sent`/`hist_bounced`), asunto (word-break).
+11. **Estilo**: conservar `mwa-gm-*`; nuevos: tabs (`mwa-gm-tabs/tab/is-active`),
+    chips con punto de color por CSS (`::before`), select/input, hint, badges de
+    resultado, dash, modal (fixed + backdrop + box), historial.
+12. **Minificado**: a mano (sin Grunt, mismo criterio que las otras 14) →
+    `amd/build/enviarnotas.min.js`; verificar con `node --check` (Node v24 disponible).
+
+### 14.3 Lo que queda del Paso 4 (orden exacto al retomar)
+
+1. **Escribir `amd/src/enviarnotas.js` (v2)** — el único archivo NO creado aún; diseño
+   completo en §14.2 y base v1 ya leída (§14.1).
+2. `node --check` en el src.
+3. Minificar a mano → `amd/build/enviarnotas.min.js` + `node --check`.
+4. `styles/gradesmail.css`: **agregar** (no reemplazar) los estilos nuevos de §14.2-11.
+5. `php -l` en `enviarnotas.php` + 3 `lang` (por seguridad; no se tocaron).
+6. **Deploy TODO JUNTO** (riesgo §11.3): `amd/src/enviarnotas.js`,
+   `amd/build/enviarnotas.min.js`, `styles/gradesmail.css`, `enviarnotas.php` (59 keys),
+   `lang/en`, `lang/es`, `lang/pt_br` → `/tmp` (nombre nuevo por archivo) → `docker cp`
+   a sus rutas en `moodle_app:/bitnami/moodle/blocks/mwa_dashboard/`. (Patrón §12.5:
+   SCP no sobrescribe → nombre nuevo; `docker cp` sí sobrescribe.)
+7. Probar en curso **id=2** con navegador (admin): pestaña Enviar (lista 7 estudiantes,
+   select quiz, passmark 6, filtros 🟢🔴🟡 sobre datos reales (3 con nota), búsqueda,
+   preview, modal, envío a 1 estudiante) y pestaña Historial (9 envíos reales, filtro
+   estado, cargar más). *(usuario confirma)*
+8. Commit incremental + update de este plan (§14 → ✅ y Paso 4 cerrado).
+9. Luego: Paso 5 (probar/afinar Historial ya incluido en el v2), Paso 6 (modales ya
+   incluidos en el v2 — verificarlos), Paso 7 (cierre: php -l + node --check +
+   changelog README/ESTRUCTURA si queda tiempo).
+
+### 14.4 Estado del despliegue (contraste local ↔ producción)
+
+| Archivo | Local | Servidor (producción) |
+| --- | --- | --- |
+| `classes/external.php` | fix LIMIT/OFFSET (sha256 `5e9513a8…bee21b`) | ✅ igual (subido en §13.2) |
+| `db/services.php`, `version.php` | 2 WS + 2026102201 | ✅ (Paso 3, §12.1) |
+| `amd/src/enviarnotas.js` | v1 (15,073 B) | v1 (15,073 B) |
+| `amd/build/enviarnotas.min.js` | v1 (8,081 B) | v1 (8,081 B) + `.bak` residual |
+| `styles/gradesmail.css` | v1 (5,071 B) | v1 |
+| `enviarnotas.php` | 59 claves | 59 claves ✅ |
+| `lang/en` | completo | completo ✅ |
+| `lang/es`, `lang/pt_br` | completo (+37) | completo ✅ |
+
+## 15. Punto de corte — sesión 23-oct-2026 (Paso 4: código v2 COMPLETO + DEPLOYADO; prueba UI pendiente del usuario)
+
+**Estado: JS v2 escrito, minificado (terser), CSS ampliado, los 7 archivos DEPLOYADOS al
+servidor y verificados SHA-256 LOCAL = SERVIDOR (ALL_MATCH). Commit local `30e9827`.
+La validación visual (E2E en navegador) queda pendiente: la browser-tool no está conectada
+en esta máquina; el usuario debe probar con su navegador y confirmar.**
+
+### 15.1 Cambios de esta sesión (todos commiteados en `30e9827`)
+
+| Archivo | Cambio | Local |
+| --- | --- | --- |
+| `amd/src/enviarnotas.js` | **RE-ESCRITO (v2)**, 36,385 B: tabs Enviar/Historial; select actividad (precarga primera, `disabled` si no hay) + campo passmark precargado del WS (hint custom/fallback/none, `disabled` sin actividad); chips Aprobados/Reprobados/"Sin nota" (punto de color vía CSS `::before`) + "Todos"; búsqueda por nombre (solo visibilidad); columna "Resultado de la actividad" (badge `mwa-gm-badge-passed/failed/pending`, dash si no clasificable); chips marcan su grupo y desmarcan el resto, "Todos" no toca la selección; "Seleccionar todos/deseleccionar" opera sobre filas visibles; preview + envío (modal centrado `mwaGmModal` reemplaza `window.confirm`/`window.alert`; confirm usa `confirm_body` con `{count}`/`{activity}`/`{passnote}`); historial perezoso (limit 25, offset creciente, filtro estado all/sent/error, "Cargar más", empty state, fecha/hora vía `Intl.DateTimeFormat` desde `timesent`); tras envío con `sent>0`, si el historial ya se abrió → recarga automática | 36,385 B |
+| `amd/build/enviarnotas.min.js` | Regenerado con **`npx -y terser -m`** (`cmd /c npx …`; el wrapper `npx.ps1` lo bloquea la execution policy), 20,391 B, `node --check` OK | 20,391 B |
+| `styles/gradesmail.css` | **AGREGADO** (sin tocar v1): tabs, fields, select/input, hint, chips con puntos de color, badges passed/failed/pending, dash, `.mwa-gm-subj`, `.mwa-gm-table-hist`, modal (fixed + backdrop + box centrada + acciones), focus rings | 8,876 B |
+| `enviarnotas.php`, `lang/en`, `lang/es`, `lang/pt_br` | **Sin cambios** (ya estaban listos, §11-§13); se subieron al servidor | — |
+
+### 15.2 Verificaciones (todas OK)
+
+- `node --check` en `amd/src/enviarnotas.js` y `amd/build/enviarnotas.min.js` — OK (Node v24).
+- `php -l` en `enviarnotas.php` + 3 lang — OK (PHP 8.3.30 local).
+- Deploy de los 7 archivos + `stat` (tamaños = local) + grep de marcadores v2 (`get_grades_send_options` ×3 y `mwaGmModal` ×9 en src, `mwaGmModal` ×1 en min, `mwa-gm-modal` ×6 en CSS, `gradesmail_alert_noselection` ×1 por lang) — todos PASS.
+- **SHA-256 local = servidor en los 7 archivos: `ALL_MATCH`** (script `p4_sha.ps1`).
+- Commit Git `30e9827` (3 archivos).
+
+### 15.3 Detalles de la sesión (no perder)
+
+- **`Set-SCPItem` de ESTA versión NO acepta `-Destination` a un archivo**
+  (`scp: /tmp/p4_js.js: No such file or directory`: lo trata como directorio).
+  **Receta vigente**: copiar local a nombre único (`p4_*.js/.css/.php` en el temp dir) →
+  `Set-SCPItem -Destination '/tmp'` (directorio) → `docker cp /tmp/p4_X moodle_app:<ruta-final>`
+  (a **archivo destino**: `docker cp` sí renombra). Scripts en `C:\Users\Christian\AppData\Local\Temp\opencode\`:
+  `p4_deploy_frontend.ps1`, `p4_debug.ps1`, `p4_debug2.ps1`, `p4_final.ps1`, `p4_sha.ps1`.
+- **Comando SSH remoto gigante** (todo `;` en una línea) falló una vez con exitcode 2 y sin salida;
+  troceado en pasos cortos cada `docker cp` pasó con `rc=0` → ante salida vacía, trocear.
+- **`powershell -Command` con `$L:` inline** rompe el parseo PS (`$L:` se lee como drive) → nada de
+  bucles `for` bash en comandos remotos inline; un mandato corto por llamada.
+- El JS v2 **ya no usa `noselection` ni `confirm_send` como texto de `window.confirm`**:
+  `confirm_send` es SOLO el label del botón del modal ("Send now"/"Enviar ahora") → la regresión
+  §11.3 queda resuelta (lang nueva + JS nuevo subidos juntos ✅).
+- Doble carga `get_grades` + `get_grades_send_options` en paralelo; la fila conserva `raw` hasta
+  `checkReady()` (`uiBuilt` único) y luego arma `acts[seq] = raw['act_' + seq]` → inmune al orden
+  de llegada de las respuestas.
+- En el servidor quedó el min **24 líneas / 20,391 B** (terser no apila en una sola línea; válido).
+- Host `/tmp`: quedan los 7 `p4_*` (sticky-bit, no se pueden borrar como `proyectosmym` → `sudo rm`).
+
+### 15.4 Checklist de prueba para el USUARIO (curso id 2 — PRUEBA-RA, usuario `admin`)
+
+URL directa: `https://medicionra.uniclaretiana.edu.co/blocks/mwa_dashboard/enviarnotas.php?course=2`
+(si aún carga el JS viejo: `Ctrl+F5`; la versión del asset no cambia (2026102201), así que limpiar
+caché del plugin si hace falta).
+
+1. Pestaña **"Enviar notas"**: select "Actividad evaluada" precargado con
+   **"Prueba funcional - Momento 1 RA (10)"**; campo "Nota mínima de aprobación" = **6** con hint
+   de "tomada de la actividad en Moodle"; 7 estudiantes en la tabla; columna
+   "Resultado de la actividad" con badges: ≥6 → Aprobado (verde), <6 → Reprobado (rojo),
+   sin nota en la actividad → "Sin nota" (amarillo).
+2. Chips: **Aprobados** → solo se ven los Aprobados Y sus checkboxes quedan marcados
+   (los demás desmarcados); **Todos** → se vuelven a ver los 7 sin tocar la selección.
+   Cambiar passmark a **999** → los que tenían nota quedan "Reprobado"; los chips se re-aplican.
+3. Búsqueda por nombre: filtra filas sin desmarcar checkboxes.
+4. **"Vista previa"** (con ≥1 marcado): muestra asunto + cuerpo completo del correo (misma función
+   server que envía).
+5. **"Enviar notas"** a 1 estudiante → **modal centrado** "¿Enviar las notas a los estudiantes?"
+   con el cuerpo (nº de estudiantes + actividad + nota de clasificación) y botones
+   **Cancelar / Enviar ahora** (no el `window.confirm` nativo) → tras enviar:
+   tabla de resultados con badge "Enviado" y ✓ en Correo/Mensaje. (Envío real: 1 correo + 1
+   mensaje para ese estudiante; queda 1 fila nueva de auditoría.)
+6. Pestaña **"Historial"**: lista los envíos (≥9 anteriores + el nuevo de la prueba), fechas y
+   horas correctas, filtro "Todos los estados / Entregado / Rebotó", badge de estado por fila.
+7. Idioma **español**: todo el texto visible en español, **sin claves `gradesmail_*` en crudo**.
+
+### 15.5 Siguiente (tras confirmación del usuario)
+
+1. **Pasos 5-6** (Historial + modales, ya incluidos en el v2) → cerrarlos si §15.4-5/6 son OK.
+2. **Paso 7 — Cierre**: `README.md` (sección "Grades notification" + changelog `4.3.1`) y
+   `ESTRUCTURA.md` (mapa de archivos, flujo, tabla de web services +2, tabla "Quiero… → archivo").
+3. (Opcional) antigua Fase 4: `tests/send_grades_mail_test.php` (PHPUnit) + checklist manual
+   del §4.
+
+
