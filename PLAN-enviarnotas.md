@@ -1023,8 +1023,87 @@ re-leer archivos.
 | `amd/src/enviarnotas.js` | v1 (15,073 B) | v1 (15,073 B) |
 | `amd/build/enviarnotas.min.js` | v1 (8,081 B) | v1 (8,081 B) + `.bak` residual |
 | `styles/gradesmail.css` | v1 (5,071 B) | v1 |
-| `enviarnotas.php` | 59 claves | v1 (24 claves) |
-| `lang/en` | completo | completo (§12.1 sin subir lang nueva: verificar) |
-| `lang/es`, `lang/pt_br` | completo (+37) | v1 (sin las 37 nuevas) |
+| `enviarnotas.php` | 59 claves | 59 claves ✅ |
+| `lang/en` | completo | completo ✅ |
+| `lang/es`, `lang/pt_br` | completo (+37) | completo ✅ |
+
+## 15. Punto de corte — sesión 23-oct-2026 (Paso 4: código v2 COMPLETO + DEPLOYADO; prueba UI pendiente del usuario)
+
+**Estado: JS v2 escrito, minificado (terser), CSS ampliado, los 7 archivos DEPLOYADOS al
+servidor y verificados SHA-256 LOCAL = SERVIDOR (ALL_MATCH). Commit local `30e9827`.
+La validación visual (E2E en navegador) queda pendiente: la browser-tool no está conectada
+en esta máquina; el usuario debe probar con su navegador y confirmar.**
+
+### 15.1 Cambios de esta sesión (todos commiteados en `30e9827`)
+
+| Archivo | Cambio | Local |
+| --- | --- | --- |
+| `amd/src/enviarnotas.js` | **RE-ESCRITO (v2)**, 36,385 B: tabs Enviar/Historial; select actividad (precarga primera, `disabled` si no hay) + campo passmark precargado del WS (hint custom/fallback/none, `disabled` sin actividad); chips Aprobados/Reprobados/"Sin nota" (punto de color vía CSS `::before`) + "Todos"; búsqueda por nombre (solo visibilidad); columna "Resultado de la actividad" (badge `mwa-gm-badge-passed/failed/pending`, dash si no clasificable); chips marcan su grupo y desmarcan el resto, "Todos" no toca la selección; "Seleccionar todos/deseleccionar" opera sobre filas visibles; preview + envío (modal centrado `mwaGmModal` reemplaza `window.confirm`/`window.alert`; confirm usa `confirm_body` con `{count}`/`{activity}`/`{passnote}`); historial perezoso (limit 25, offset creciente, filtro estado all/sent/error, "Cargar más", empty state, fecha/hora vía `Intl.DateTimeFormat` desde `timesent`); tras envío con `sent>0`, si el historial ya se abrió → recarga automática | 36,385 B |
+| `amd/build/enviarnotas.min.js` | Regenerado con **`npx -y terser -m`** (`cmd /c npx …`; el wrapper `npx.ps1` lo bloquea la execution policy), 20,391 B, `node --check` OK | 20,391 B |
+| `styles/gradesmail.css` | **AGREGADO** (sin tocar v1): tabs, fields, select/input, hint, chips con puntos de color, badges passed/failed/pending, dash, `.mwa-gm-subj`, `.mwa-gm-table-hist`, modal (fixed + backdrop + box centrada + acciones), focus rings | 8,876 B |
+| `enviarnotas.php`, `lang/en`, `lang/es`, `lang/pt_br` | **Sin cambios** (ya estaban listos, §11-§13); se subieron al servidor | — |
+
+### 15.2 Verificaciones (todas OK)
+
+- `node --check` en `amd/src/enviarnotas.js` y `amd/build/enviarnotas.min.js` — OK (Node v24).
+- `php -l` en `enviarnotas.php` + 3 lang — OK (PHP 8.3.30 local).
+- Deploy de los 7 archivos + `stat` (tamaños = local) + grep de marcadores v2 (`get_grades_send_options` ×3 y `mwaGmModal` ×9 en src, `mwaGmModal` ×1 en min, `mwa-gm-modal` ×6 en CSS, `gradesmail_alert_noselection` ×1 por lang) — todos PASS.
+- **SHA-256 local = servidor en los 7 archivos: `ALL_MATCH`** (script `p4_sha.ps1`).
+- Commit Git `30e9827` (3 archivos).
+
+### 15.3 Detalles de la sesión (no perder)
+
+- **`Set-SCPItem` de ESTA versión NO acepta `-Destination` a un archivo**
+  (`scp: /tmp/p4_js.js: No such file or directory`: lo trata como directorio).
+  **Receta vigente**: copiar local a nombre único (`p4_*.js/.css/.php` en el temp dir) →
+  `Set-SCPItem -Destination '/tmp'` (directorio) → `docker cp /tmp/p4_X moodle_app:<ruta-final>`
+  (a **archivo destino**: `docker cp` sí renombra). Scripts en `C:\Users\Christian\AppData\Local\Temp\opencode\`:
+  `p4_deploy_frontend.ps1`, `p4_debug.ps1`, `p4_debug2.ps1`, `p4_final.ps1`, `p4_sha.ps1`.
+- **Comando SSH remoto gigante** (todo `;` en una línea) falló una vez con exitcode 2 y sin salida;
+  troceado en pasos cortos cada `docker cp` pasó con `rc=0` → ante salida vacía, trocear.
+- **`powershell -Command` con `$L:` inline** rompe el parseo PS (`$L:` se lee como drive) → nada de
+  bucles `for` bash en comandos remotos inline; un mandato corto por llamada.
+- El JS v2 **ya no usa `noselection` ni `confirm_send` como texto de `window.confirm`**:
+  `confirm_send` es SOLO el label del botón del modal ("Send now"/"Enviar ahora") → la regresión
+  §11.3 queda resuelta (lang nueva + JS nuevo subidos juntos ✅).
+- Doble carga `get_grades` + `get_grades_send_options` en paralelo; la fila conserva `raw` hasta
+  `checkReady()` (`uiBuilt` único) y luego arma `acts[seq] = raw['act_' + seq]` → inmune al orden
+  de llegada de las respuestas.
+- En el servidor quedó el min **24 líneas / 20,391 B** (terser no apila en una sola línea; válido).
+- Host `/tmp`: quedan los 7 `p4_*` (sticky-bit, no se pueden borrar como `proyectosmym` → `sudo rm`).
+
+### 15.4 Checklist de prueba para el USUARIO (curso id 2 — PRUEBA-RA, usuario `admin`)
+
+URL directa: `https://medicionra.uniclaretiana.edu.co/blocks/mwa_dashboard/enviarnotas.php?course=2`
+(si aún carga el JS viejo: `Ctrl+F5`; la versión del asset no cambia (2026102201), así que limpiar
+caché del plugin si hace falta).
+
+1. Pestaña **"Enviar notas"**: select "Actividad evaluada" precargado con
+   **"Prueba funcional - Momento 1 RA (10)"**; campo "Nota mínima de aprobación" = **6** con hint
+   de "tomada de la actividad en Moodle"; 7 estudiantes en la tabla; columna
+   "Resultado de la actividad" con badges: ≥6 → Aprobado (verde), <6 → Reprobado (rojo),
+   sin nota en la actividad → "Sin nota" (amarillo).
+2. Chips: **Aprobados** → solo se ven los Aprobados Y sus checkboxes quedan marcados
+   (los demás desmarcados); **Todos** → se vuelven a ver los 7 sin tocar la selección.
+   Cambiar passmark a **999** → los que tenían nota quedan "Reprobado"; los chips se re-aplican.
+3. Búsqueda por nombre: filtra filas sin desmarcar checkboxes.
+4. **"Vista previa"** (con ≥1 marcado): muestra asunto + cuerpo completo del correo (misma función
+   server que envía).
+5. **"Enviar notas"** a 1 estudiante → **modal centrado** "¿Enviar las notas a los estudiantes?"
+   con el cuerpo (nº de estudiantes + actividad + nota de clasificación) y botones
+   **Cancelar / Enviar ahora** (no el `window.confirm` nativo) → tras enviar:
+   tabla de resultados con badge "Enviado" y ✓ en Correo/Mensaje. (Envío real: 1 correo + 1
+   mensaje para ese estudiante; queda 1 fila nueva de auditoría.)
+6. Pestaña **"Historial"**: lista los envíos (≥9 anteriores + el nuevo de la prueba), fechas y
+   horas correctas, filtro "Todos los estados / Entregado / Rebotó", badge de estado por fila.
+7. Idioma **español**: todo el texto visible en español, **sin claves `gradesmail_*` en crudo**.
+
+### 15.5 Siguiente (tras confirmación del usuario)
+
+1. **Pasos 5-6** (Historial + modales, ya incluidos en el v2) → cerrarlos si §15.4-5/6 son OK.
+2. **Paso 7 — Cierre**: `README.md` (sección "Grades notification" + changelog `4.3.1`) y
+   `ESTRUCTURA.md` (mapa de archivos, flujo, tabla de web services +2, tabla "Quiero… → archivo").
+3. (Opcional) antigua Fase 4: `tests/send_grades_mail_test.php` (PHPUnit) + checklist manual
+   del §4.
 
 
