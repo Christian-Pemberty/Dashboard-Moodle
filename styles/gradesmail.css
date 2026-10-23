@@ -275,3 +275,221 @@
     color: #495057;
     margin-bottom: .5rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* v2 — tabs, evaluation settings, chips, result badges, search,       */
+/* centered modal, send history.                                       */
+/* ------------------------------------------------------------------ */
+
+.mwa-gm-tabs {
+    display: flex;
+    gap: .25rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #e3e8ee;
+}
+
+.mwa-gm-tab {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    font: inherit;
+    font-size: .95rem;
+    font-weight: 600;
+    color: #64748b;
+    padding: .55rem .9rem;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+}
+
+.mwa-gm-tab:hover {
+    color: #334155;
+}
+
+.mwa-gm-tab.is-active {
+    color: #0d6efd;
+    border-bottom-color: #0d6efd;
+}
+
+.mwa-gm-tab:focus,
+.mwa-gm-select:focus,
+.mwa-gm-input:focus,
+.mwa-gm-chip:focus {
+    outline: 2px solid #9ec5fe;
+    outline-offset: 1px;
+}
+
+.mwa-gm-field {
+    margin-bottom: 1rem;
+}
+
+.mwa-gm-field:last-child {
+    margin-bottom: 0;
+}
+
+.mwa-gm-select,
+.mwa-gm-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .45rem .6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: .5rem;
+    font: inherit;
+    font-size: .9rem;
+    color: #1f2937;
+    background: #fff;
+}
+
+.mwa-gm-input-narrow {
+    width: 10rem;
+}
+
+.mwa-gm-select-narrow {
+    width: auto;
+    font-size: .85rem;
+}
+
+.mwa-gm-input-search {
+    flex: 1 1 13rem;
+}
+
+.mwa-gm-select:disabled,
+.mwa-gm-input:disabled {
+    opacity: .55;
+    background: #f1f5f9;
+    cursor: not-allowed;
+}
+
+.mwa-gm-hint {
+    font-size: .8rem;
+    color: #64748b;
+    margin: .3rem 0 0;
+}
+
+.mwa-gm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-bottom: .75rem;
+}
+
+.mwa-gm-chip {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    padding: .32rem .85rem .32rem .55rem;
+    font: inherit;
+    font-size: .85rem;
+    font-weight: 600;
+    color: #334155;
+    cursor: pointer;
+}
+
+.mwa-gm-chip::before {
+    content: '';
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    border-radius: 999px;
+    background: #94a3b8;
+}
+
+.mwa-gm-chip-passed::before {
+    background: #157347;
+}
+
+.mwa-gm-chip-failed::before {
+    background: #b02a37;
+}
+
+.mwa-gm-chip-pending::before {
+    background: #d97706;
+}
+
+.mwa-gm-chip.is-active {
+    border-color: #0d6efd;
+    color: #0d6efd;
+    background: #eff6ff;
+}
+
+.mwa-gm-chip:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.mwa-gm-badge-passed {
+    background: #e7f6ec;
+    color: #157347;
+}
+
+.mwa-gm-badge-failed {
+    background: #fdecec;
+    color: #b02a37;
+}
+
+.mwa-gm-badge-pending {
+    background: #fff7e6;
+    color: #92580b;
+}
+
+.mwa-gm-dash {
+    color: #94a3b8;
+}
+
+.mwa-gm-subj {
+    word-break: break-word;
+}
+
+.mwa-gm-table-hist {
+    font-size: .82rem;
+}
+
+.mwa-gm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+}
+
+.mwa-gm-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 35, 60, .5);
+}
+
+.mwa-gm-modal-box {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(28rem, calc(100vw - 2rem));
+    background: #fff;
+    border-radius: .75rem;
+    box-shadow: 0 12px 32px rgba(15, 35, 60, .3);
+    padding: 1.1rem 1.25rem 1.25rem;
+    color: #1f2937;
+}
+
+.mwa-gm-modal-box h2 {
+    margin: 0 0 .5rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.mwa-gm-modal-box p {
+    margin: 0;
+    font-size: .92rem;
+    color: #495057;
+    line-height: 1.5;
+}
+
+.mwa-gm-modal-actions {
+    margin: 1rem 0 0;
+    justify-content: flex-end;
+}
