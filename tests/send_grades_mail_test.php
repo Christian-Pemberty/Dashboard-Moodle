@@ -330,4 +330,224 @@ final class send_grades_mail_test extends \advanced_testcase {
         $this->assertStringContainsString('8.5', $preview['html']);
         $this->assertStringNotContainsString('9.9', $preview['html']);
     }
+
+    // ---- Plan SS15 / T1 — comment confinement (anti-manipulation) -----------
+
+    /**
+     * The teacher comment is the ONLY free-form input of the email. A malicious
+     * comment must not alter the rebuilt parts (subject, greeting from the DB)
+     * and must appear exactly once, inside the editable anchor.
+     */
+    public function test_comment_confined_to_editable_anchor_and_rebuilt_data(): void {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $course  = $this->getDataGenerator()->create_course();
+        $ana     = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5);
+
+        $malicious = 'HI EVERYONE!! <script>alert(1)</script> Nota real: 99/100';
+
+        // 1) The subject must be the DB-rebuilt one, and never inherit comment content.
+        $expectedsubject = get_string('gradesmail_email_subj', 'block_mwa_dashboard',
+            ['course' => $course->fullname, 'grade' => '8.5 / 10']);
+
+        $preview = \block_mwa_dashboard\external::get_grades_mail_preview($course->id, $ana->id, 0, $malicious);
+
+        $this->assertSame($expectedsubject, $preview['subject']);
+        $this->assertStringNotContainsString('99/100', $preview['subject']);
+
+        // 2) Greeting and table are rebuilt from the DB, not from the comment.
+        $this->assertStringContainsString(
+            s(get_string('gradesmail_email_hi', 'block_mwa_dashboard', ['name' => 'Ana Alumna'])),
+            $preview['html']);
+        $this->assertStringContainsString('8.5', $preview['html']);
+
+        // 3) The comment appears exactly once (no duplication) and ONLY inside
+        //    the <div data-gm-editable="comment"> anchor.
+        $html     = $preview['html'];
+        $anchor   = strpos($html, 'data-gm-editable="comment"');
+        $comment  = strpos($html, 'HI EVERYONE');
+        $this->assertNotFalse($anchor, 'The editable anchor must exist');
+        $this->assertNotFalse($comment, 'The comment text must be present');
+        $this->assertGreaterThan($anchor, $comment, 'The comment must be after the anchor start');
+        $close = strpos($html, '</div>', $comment);
+        $this->assertNotFalse($close, 'The anchor must close after the comment');
+        $this->assertSame(1, substr_count($html, 'HI EVERYONE'), 'The comment must appear exactly once');
+        $this->assertStringContainsString('data-gm-field="commenttext"', $html);
+    }
+
+    // ---- Plan SS15 / T2 — Gmail/Outlook-safe inline styles ------------------
+
+    /**
+     * The mail HTML must be email-safe: no <style> block, web-safe inline font
+     * stack and an inline-bordered table with a coloured header background.
+     */
+    public function test_mail_html_uses_inline_styles_only(): void {
+        $this->resetAfterTest(true);
+
+        $course  = $this->getDataGenerator()->create_course();
+        $ana     = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5);
+
+        $preview = \block_mwa_dashboard\external::get_grades_mail_preview($course->id, $ana->id, 0, '');
+        $html    = $preview['html'];
+
+        // No external/centralised styling: inline only.
+        $this->assertStringNotContainsString('<style>', $html);
+        $this->assertStringNotContainsString('<link', $html);
+
+        // Web-safe font stack on the wrapper.
+        $this->assertStringContainsString('font-family:Arial,Helvetica,sans-serif', $html);
+
+        // Inline-bordered table with the coloured header (acceptance T2).
+        $this->assertStringContainsString('border-collapse:collapse', $html);
+        $this->assertStringContainsString('border:1px solid #d9dee5', $html);
+        $this->assertStringContainsString('background:#f1f3f7', $html);
+
+        // Plain text keeps derivating from the same HTML source (WYSIWYG):
+        // the activity name must still be present after html_to_text().
+        $this->assertStringContainsString('Test assignment', $preview['plain']);
+    }
+
+    // ---- Plan SS15 / T3 — history management -------------------------------
+
+    /**
+     * Only the original sender (or a site admin) can delete a grades-mail
+     * audit row; a foreign teacher gets a clean refusal and the row survives.
+     */
+    public function test_delete_grades_mail_record_owner_only(): void {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $course  = $this->getDataGenerator()->create_course();
+        $dora    = $this->enrol_user_in_course($course, 'student', 'Dora', 'Alumna');
+        $tito    = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $carla   = $this->enrol_user_in_course($course, 'editingteacher', 'Carla', 'Docente');
+
+        $this->setUser($tito);
+        $result = \block_mwa_dashboard\external::send_grades_mail($course->id, [$dora->id], '', 0);
+        $this->assertSame(1, $result['sent']);
+
+        $row = $DB->get_record('block_mwa_dashboard_messages',
+            ['courseid' => $course->id, 'userid' => $dora->id, 'intervention_reason' => 'Grades']);
+        $this->assertNotFalse($row);
+
+        // 1) Foreign teacher: refused, row untouched.
+        $this->setUser($carla);
+        $this->assertSame(['success' => false], \block_mwa_dashboard\external::delete_grades_mail_record($row->id));
+        $this->assertNotFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $row->id], 'id', IGNORE_MISSING));
+
+        // 2) Owner: deleted.
+        $this->setUser($tito);
+        $this->assertSame(['success' => true], \block_mwa_dashboard\external::delete_grades_mail_record($row->id));
+        $this->assertFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $row->id], 'id', IGNORE_MISSING));
+
+        // 3) Unknown ID: clean refusal (no exception).
+        $this->assertSame(['success' => false], \block_mwa_dashboard\external::delete_grades_mail_record($row->id));
+    }
+
+    /**
+     * Pedagogical intervention rows (intervention_reason <> 'Grades') are
+     * never deletable through the grades-history web service, even for the
+     * teaching owner of the row.
+     */
+    public function test_delete_grades_mail_record_refuses_non_grades_rows(): void {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $course  = $this->getDataGenerator()->create_course();
+        $ana     = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $tito    = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($tito);
+
+        // A pedagogical-intervention style row, owned by the same teacher.
+        $record = new \stdClass();
+        $record->courseid            = $course->id;
+        $record->userid              = $ana->id;
+        $record->teacherid           = $tito->id;
+        $record->subject             = 'Intervención pedagógica';
+        $record->message             = 'Mensaje de intervención.';
+        $record->timesent            = time();
+        $record->status              = 'sent';
+        $record->ai_generated        = 0;
+        $record->intervention_reason = 'Low engagement';
+        $record->send_type           = 'moodle';
+        $record->teacher_note_updated = 0;
+        $intervid = $DB->insert_record('block_mwa_dashboard_messages', $record);
+
+        $this->assertSame(['success' => false], \block_mwa_dashboard\external::delete_grades_mail_record($intervid));
+        $this->assertNotFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $intervid], 'id', IGNORE_MISSING));
+    }
+
+    /**
+     * clear_grades_mail_history() removes only the caller's own 'Grades' rows
+     * (a site admin removes every teacher's rows) and never touches
+     * pedagogical-intervention rows.
+     */
+    public function test_clear_grades_mail_history_scoped_and_admin(): void {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $course = $this->getDataGenerator()->create_course();
+        $dora  = $this->enrol_user_in_course($course, 'student', 'Dora', 'Alumna');
+        $tito  = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $carla = $this->enrol_user_in_course($course, 'editingteacher', 'Carla', 'Docente');
+
+        $this->setUser($tito);
+        $this->assertSame(1, \block_mwa_dashboard\external::send_grades_mail($course->id, [$dora->id], '', 0)['sent']);
+        $this->setUser($carla);
+        $this->assertSame(1, \block_mwa_dashboard\external::send_grades_mail($course->id, [$dora->id], '', 0)['sent']);
+
+        // A non-Grades row that must survive every clear.
+        $this->setUser($tito);
+        $record = new \stdClass();
+        $record->courseid            = $course->id;
+        $record->userid              = $dora->id;
+        $record->teacherid           = $tito->id;
+        $record->subject             = 'Intervención pedagógica';
+        $record->message             = 'Mensaje de intervención.';
+        $record->timesent            = time();
+        $record->status              = 'sent';
+        $record->ai_generated        = 0;
+        $record->intervention_reason = 'Low engagement';
+        $record->send_type           = 'moodle';
+        $record->teacher_note_updated = 0;
+        $intervid = $DB->insert_record('block_mwa_dashboard_messages', $record);
+
+        // 1) Tito clears: only his row goes; Carla's and the intervention remain.
+        $this->setUser($tito);
+        $res = \block_mwa_dashboard\external::clear_grades_mail_history($course->id);
+        $this->assertSame(['success' => true, 'deleted' => 1], $res);
+        $this->assertNotFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $intervid], 'id', IGNORE_MISSING));
+        $this->assertSame(1, $DB->count_records_select(
+            'block_mwa_dashboard_messages',
+            "courseid = :c AND intervention_reason = 'Grades'",
+            ['c' => $course->id]));
+
+        // 2) Clearing again is a clean no-op.
+        $this->assertSame(['success' => true, 'deleted' => 0],
+            \block_mwa_dashboard\external::clear_grades_mail_history($course->id));
+
+        // 3) A site admin clears everything, including Carla's row.
+        $admin = $this->getDataGenerator()->create_admin_user();
+        $this->setUser($admin);
+        $this->assertSame(['success' => true, 'deleted' => 1], \block_mwa_dashboard\external::clear_grades_mail_history($course->id));
+        $this->assertSame(0, $DB->count_records_select(
+            'block_mwa_dashboard_messages',
+            "courseid = :c AND intervention_reason = :r",
+            ['c' => $course->id, 'r' => 'Grades']));
+        // And the pedagogical intervention is still there.
+        $this->assertNotFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $intervid], 'id', IGNORE_MISSING));
+    }
 }

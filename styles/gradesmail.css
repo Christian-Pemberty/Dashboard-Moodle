@@ -493,3 +493,64 @@
     margin: 1rem 0 0;
     justify-content: flex-end;
 }
+
+/* ── Plan T1: editable comment zone inside the in-app preview ───────────── */
+/* Only the paragraph [data-gm-field="commenttext"] ever gets .mwa-gm-editing;
+   the rest of the rendered mail (greeting, date, global result, table,
+   footer) is read-only by design. */
+.mwa-gm-editing {
+    outline: none;
+    border: 1px dashed #6aa6e8;
+    border-radius: .4rem;
+    background: #f4f9ff;
+    padding: .35rem .55rem;
+    min-height: 1.4em;
+}
+
+.mwa-gm-editing:focus {
+    border-color: #2f7fd6;
+    background: #eef6ff;
+}
+
+/* ── Plan T3a: selected-student chips inside the preview card ────────────── */
+.mwa-gm-chips-students {
+    margin-top: .1rem;
+    margin-bottom: .6rem;
+}
+
+/* Student chips carry no coloured state dot (that only belongs to the
+   passed/failed/pending filter chips up in the list). */
+.mwa-gm-chip-student::before {
+    display: none;
+}
+
+.mwa-gm-chip-student.is-active {
+    border-color: #0d6efd;
+    color: #0d6efd;
+    background: #eff6ff;
+}
+
+/* ── Plan T3b: history row delete + clear buttons ────────────────────────── */
+.mwa-gm-iconbtn {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
+    border: 1px solid #d3dbe4;
+    border-radius: .4rem;
+    background: #fff;
+    color: #b02a37;
+    font-size: .85rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.mwa-gm-iconbtn:hover:not(:disabled) {
+    border-color: #e5a9a9;
+    background: #fdf1f1;
+}
+
+.mwa-gm-delcol {
+    width: 2.4rem;
+}

@@ -59,6 +59,11 @@ $gmkeys = [
     // Confirmation and alert dialogs (centered, non-blocking).
     'confirm_title', 'confirm_body', 'confirm_passnote', 'confirm_noactivity',
     'confirm_cancel', 'alert_noselection', 'error_title',
+    // Preview editor (plan T1) + student chips (plan T3a).
+    'preview_edit', 'preview_done', 'preview_chips_hint', 'email_commentlabel',
+    // History management (plan T3b): row delete + clear all.
+    'hist_del_title', 'hist_del_body', 'hist_del_row',
+    'hist_clear', 'hist_clear_title', 'hist_clear_body', 'hist_clear_done',
 ];
 // Fetch the localised UI strings. "gradesmail_selectedcount" keeps a {count}
 // placeholder that enviarnotas.js injects at runtime; we pass a same-named

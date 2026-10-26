@@ -2204,3 +2204,15 @@ $string['gradesmail_confirm_send'] = 'Send now';
 $string['gradesmail_alert_noselection'] = 'Select at least one student first.';
 $string['gradesmail_error_title'] = 'Something went wrong';
 $string['gradesmail_error_generic'] = 'The request failed. Please try again.';
+// Preview editor (T1) + selected student chips (T3a).
+$string['gradesmail_preview_edit'] = 'Edit';
+$string['gradesmail_preview_done'] = 'Done';
+$string['gradesmail_preview_chips_hint'] = 'Click a name to see that student\'s email';
+// History management (T3b): row delete + clear all.
+$string['gradesmail_hist_del_title'] = 'Delete this record?';
+$string['gradesmail_hist_del_body'] = 'This removes the grades-mail record for this student. This action cannot be undone.';
+$string['gradesmail_hist_del_row'] = 'Delete record';
+$string['gradesmail_hist_clear'] = 'Clear history';
+$string['gradesmail_hist_clear_title'] = 'Clear the entire history?';
+$string['gradesmail_hist_clear_body'] = 'This permanently deletes every grades-mail record in this course. This action cannot be undone.';
+$string['gradesmail_hist_clear_done'] = 'History cleared: {count} record(s) deleted.';

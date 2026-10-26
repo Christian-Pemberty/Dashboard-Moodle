@@ -70,6 +70,11 @@ define(['core/ajax'], function(Ajax) {
     var rowEls = {};           // uid -> {tr, box, badge}
     var hist = {started: false, busy: false, state: '', offset: 0, total: 0, rows: []};
     var modalOnOk = null;
+    // Preview editor (plan T1) + selected-student chips (plan T3a).
+    var selOrder = [];           // checked students, painted in table order (stable chips).
+    var previewActive = null;    // student currently shown in the preview.
+    var previewCache = {};       // userid -> get_grades_mail_preview response (no re-query).
+    var commentEditing = false;  // T1: is the preview comment zone editable right now.
 
     var t = function(key) {
         return (typeof str[key] === 'string' && str[key] !== '') ? str[key] : key;
@@ -284,7 +289,10 @@ define(['core/ajax'], function(Ajax) {
             '      <div class="mwa-gm-cardhead">' +
             '        <h2>' + esc(t('previewtitle')) + '</h2>' +
             '        <span class="mwa-gm-student" id="mwaGmPreviewStudent"></span>' +
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmPreviewEdit">' + esc(t('preview_edit')) + '</button>' +
             '      </div>' +
+            '      <p class="mwa-gm-hint">' + esc(t('preview_chips_hint')) + '</p>' +
+            '      <div class="mwa-gm-chips mwa-gm-chips-students" id="mwaGmPreviewChips" style="display:none"></div>' +
             '      <p class="mwa-gm-subjline"><span class="mwa-gm-subjlabel">' + esc(t('previewsubject')) + ':</span> ' +
             '        <span id="mwaGmPreviewSubject"></span></p>' +
             '      <div class="mwa-gm-mail" id="mwaGmPreviewBody"></div>' +
@@ -313,6 +321,7 @@ define(['core/ajax'], function(Ajax) {
             '          <option value="sent">' + esc(t('hist_state_sent')) + '</option>' +
             '          <option value="error">' + esc(t('hist_state_error')) + '</option>' +
             '        </select>' +
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmHistClear" disabled>' + esc(t('hist_clear')) + '</button>' +
             '      </div>' +
             '      <table class="mwa-gm-table mwa-gm-table-hist" id="mwaGmHistTable" style="display:none">' +
             '        <thead><tr>' +
@@ -322,6 +331,7 @@ define(['core/ajax'], function(Ajax) {
             '          <th>' + esc(t('col_student')) + '</th>' +
             '          <th>' + esc(t('col_status')) + '</th>' +
             '          <th>' + esc(t('col_subject')) + '</th>' +
+            '          <th class="mwa-gm-delcol"></th>' +
             '        </tr></thead>' +
             '        <tbody id="mwaGmHistRows"></tbody>' +
             '      </table>' +
@@ -357,6 +367,8 @@ define(['core/ajax'], function(Ajax) {
         els.previewStudent = els.wrap.querySelector('#mwaGmPreviewStudent');
         els.previewSubject = els.wrap.querySelector('#mwaGmPreviewSubject');
         els.previewBody = els.wrap.querySelector('#mwaGmPreviewBody');
+        els.previewEdit = els.wrap.querySelector('#mwaGmPreviewEdit');
+        els.previewChips = els.wrap.querySelector('#mwaGmPreviewChips');
         els.resultsCard = els.wrap.querySelector('#mwaGmResultsCard');
         els.resultsSummary = els.wrap.querySelector('#mwaGmResultsSummary');
         els.resultsRows = els.wrap.querySelector('#mwaGmResultsRows');
@@ -365,6 +377,7 @@ define(['core/ajax'], function(Ajax) {
         els.histRows = els.wrap.querySelector('#mwaGmHistRows');
         els.histEmpty = els.wrap.querySelector('#mwaGmHistEmpty');
         els.histMore = els.wrap.querySelector('#mwaGmHistMore');
+        els.histClear = els.wrap.querySelector('#mwaGmHistClear');
     };
 
     var buildRows = function() {
@@ -381,6 +394,16 @@ define(['core/ajax'], function(Ajax) {
         els.rows.innerHTML = html;
         els.empty.style.display = (students.length === 0) ? '' : 'none';
         els.table.style.display = (students.length === 0) ? 'none' : '';
+        // Fresh dataset: reset the selection trace, preview cache, the T1
+        // editor and any previously painted preview (stale content must never
+        // survive a reload of the student rows).
+        selOrder = [];
+        previewActive = null;
+        previewCache = {};
+        commentEditing = false;
+        if (els.previewCard) {
+            els.previewCard.style.display = 'none';
+        }
         rowEls = {};
         Array.prototype.slice.call(els.rows.querySelectorAll('tr')).forEach(function(tr) {
             var box = tr.querySelector('.mwa-gm-checkbox');
@@ -468,7 +491,7 @@ define(['core/ajax'], function(Ajax) {
                 rec.box.checked = (classify(s) === filter);
             }
         });
-        updateCount();
+        refreshSelection();
     };
 
     var setChipState = function(kind) {
@@ -558,6 +581,186 @@ define(['core/ajax'], function(Ajax) {
 
     // ---------- Preview and send. ----------
 
+    // T3a: the chips trace the checked students (painted in table order, so
+    // the sequence is stable no matter how they were checked). The only
+    // per-click state kept is which student the preview currently shows.
+    var studentNameOf = function(uid) {
+        for (var i = 0; i < students.length; i++) {
+            if (students[i].userid === uid) {
+                return students[i].name;
+            }
+        }
+        return '#' + uid;
+    };
+
+    var syncPreviewChips = function() {
+        if (!els.previewChips) {
+            return;
+        }
+        var html = '';
+        selOrder.forEach(function(uid) {
+            var active = (uid === previewActive);
+            html +=
+                '<button type="button" class="mwa-gm-chip mwa-gm-chip-student' + (active ? ' is-active' : '') + '"' +
+                ' data-studentid="' + uid + '">' + esc(studentNameOf(uid)) + '</button>';
+        });
+        els.previewChips.innerHTML = html;
+        els.previewChips.style.display = (selOrder.length > 0) ? '' : 'none';
+        if (selOrder.length === 0) {
+            // Nothing selected anymore: the preview has nothing to show.
+            previewActive = null;
+            if (els.previewEdit) {
+                commentEditing = false;
+                els.previewEdit.textContent = t('preview_edit');
+            }
+            els.previewCard.style.display = 'none';
+        }
+    };
+
+    // Rebuilds the checked set + chips after ANY change of the checkboxes
+    // (individual check, select/deselect all, colored filter group).
+    var refreshSelection = function() {
+        updateCount();
+        selOrder = [];
+        checkboxes().forEach(function(box) {
+            if (box.checked) {
+                selOrder.push(parseInt(box.getAttribute('data-uid'), 10));
+            }
+        });
+        if (previewActive !== null && selOrder.indexOf(previewActive) === -1) {
+            previewActive = (selOrder.length > 0) ? selOrder[0] : null;
+        }
+        syncPreviewChips();
+    };
+
+    // T1: the preview exposes a single editable zone — the teacher comment.
+    // The anchor markup mirrors external::build_grades_mail() so the editor
+    // works when the server already rendered the section AND when it was
+    // painted with an empty comment (injected the first time, then targeted).
+    var previewAnchor = function() {
+        return els.previewBody ? els.previewBody.querySelector('[data-gm-editable="comment"]') : null;
+    };
+
+    var previewCommentField = function() {
+        var a = previewAnchor();
+        return a ? a.querySelector('[data-gm-field="commenttext"]') : null;
+    };
+
+    var injectCommentAnchor = function() {
+        if (!els.previewBody) {
+            return null;
+        }
+        var anchor = document.createElement('div');
+        anchor.setAttribute('data-gm-editable', 'comment');
+        anchor.setAttribute('style', 'margin:0 0 16px;');
+        var label = document.createElement('p');
+        label.setAttribute('style', 'margin:0 0 6px;');
+        var strong = document.createElement('strong');
+        strong.textContent = t('email_commentlabel');
+        label.appendChild(strong);
+        var field = document.createElement('p');
+        field.setAttribute('data-gm-field', 'commenttext');
+        field.setAttribute('style', 'margin:0;');
+        anchor.appendChild(label);
+        anchor.appendChild(field);
+        els.previewBody.insertBefore(anchor, els.previewBody.lastElementChild);
+        return anchor;
+    };
+
+    var syncCommentFromEditor = function() {
+        var field = previewCommentField();
+        if (!field || document.activeElement === els.comment) {
+            return;
+        }
+        // Plain text is the contract of the textarea (server formats it with
+        // FORMAT_MOODLE, exactly as with the classic textarea input).
+        els.comment.value = (field.innerText || field.textContent || '').replace(/\n+$/g, '');
+    };
+
+    var toggleCommentEdit = function() {
+        if (commentEditing) {
+            commentEditing = false;
+            var done = previewCommentField();
+            if (done) {
+                done.removeAttribute('contenteditable');
+                done.classList.remove('mwa-gm-editing');
+            }
+            if (els.previewEdit) {
+                els.previewEdit.textContent = t('preview_edit');
+            }
+            syncCommentFromEditor();
+            return;
+        }
+        var anchor = previewAnchor() || injectCommentAnchor();
+        var field = anchor ? anchor.querySelector('[data-gm-field="commenttext"]') : null;
+        if (!field) {
+            return;
+        }
+        field.setAttribute('contenteditable', 'true');
+        field.classList.add('mwa-gm-editing');
+        if (els.previewEdit) {
+            els.previewEdit.textContent = t('preview_done');
+        }
+        commentEditing = true;
+        window.setTimeout(function() {
+            field.focus();
+        }, 0);
+    };
+
+    // Paints one student's preview from a server response and re-syncs the
+    // comment zone with the CURRENT textarea value (the cached HTML still
+    // holds whatever comment was active when it was fetched).
+    var paintPreview = function(userid, res) {
+        commentEditing = false;
+        if (els.previewEdit) {
+            els.previewEdit.textContent = t('preview_edit');
+        }
+        previewActive = userid;
+        els.previewStudent.textContent = (res && res.studentname) || '';
+        els.previewSubject.textContent = (res && res.subject) || '';
+        // WYSIWYG: the body is always the server HTML; user HTML is never
+        // persisted into the DOM longer than one render (plan T1).
+        els.previewBody.innerHTML = (res && res.html) || '';
+        els.previewCard.style.display = '';
+        var field = previewCommentField();
+        if (field) {
+            field.innerText = (els.comment.value || '').trim();
+            field.addEventListener('input', syncCommentFromEditor);
+        }
+        syncPreviewChips();
+    };
+
+    var showStudentPreview = function(userid) {
+        if (busy) {
+            return;
+        }
+        if (selOrder.indexOf(userid) === -1) {
+            return;
+        }
+        if (previewCache[userid]) {
+            paintPreview(userid, previewCache[userid]);
+            return;
+        }
+        busy = true;
+        els.previewBtn.disabled = true;
+        callWS('block_mwa_dashboard_get_grades_mail_preview', {
+            courseid: courseid,
+            userid: userid,
+            groupid: groupid,
+            comment: (els.comment.value || '').trim()
+        }).then(function(res) {
+            if (res && res.html) {
+                previewCache[userid] = res;
+            }
+            paintPreview(userid, res);
+        }).catch(function(err) {
+            openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
+        }).then(function() {
+            busy = false;
+            els.previewBtn.disabled = false;
+        });
+    };
+
     var doPreview = function() {
         if (busy) {
             return;
@@ -567,24 +770,12 @@ define(['core/ajax'], function(Ajax) {
             openAlert(t('error_title'), t('alert_noselection'));
             return;
         }
-        busy = true;
-        els.previewBtn.disabled = true;
-        callWS('block_mwa_dashboard_get_grades_mail_preview', {
-            courseid: courseid,
-            userid: ids[0],
-            groupid: groupid,
-            comment: (els.comment.value || '').trim()
-        }).then(function(res) {
-            els.previewStudent.textContent = (res && res.studentname) || '';
-            els.previewSubject.textContent = (res && res.subject) || '';
-            els.previewBody.innerHTML = (res && res.html) || '';
-            els.previewCard.style.display = '';
-        }).catch(function(err) {
-            openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
-        }).then(function() {
-            busy = false;
-            els.previewBtn.disabled = false;
-        });
+        // Keep the active student while it is still selected; otherwise the
+        // first one in the selection (T3a).
+        var uid = (previewActive !== null && selOrder.indexOf(previewActive) !== -1)
+            ? previewActive
+            : selOrder[0];
+        showStudentPreview(uid);
     };
 
     var channelMark = function(ok) {
@@ -721,12 +912,18 @@ define(['core/ajax'], function(Ajax) {
                 '<td>' + esc(e.studentname || '') + '</td>' +
                 '<td>' + badge + '</td>' +
                 '<td class="mwa-gm-subj">' + esc(e.subject || '') + '</td>' +
+                '<td>' +
+                '  <button type="button" class="mwa-gm-iconbtn" data-delhist="' + esc(e.recordid) + '" title="' + esc(t('hist_del_row')) + '">&#10005;</button>' +
+                '</td>' +
                 '</tr>';
         });
         els.histRows.innerHTML = html;
         els.histEmpty.style.display = (hist.total === 0) ? '' : 'none';
         els.histTable.style.display = (hist.rows.length > 0) ? '' : 'none';
         els.histMore.style.display = (hist.offset < hist.total) ? '' : 'none';
+        if (els.histClear) {
+            els.histClear.disabled = (hist.total === 0);
+        }
     };
 
     var loadHistory = function(reset) {
@@ -819,18 +1016,118 @@ define(['core/ajax'], function(Ajax) {
         els.rows.addEventListener('change', function(ev) {
             var target = ev.target;
             if (target && target.className && String(target.className).indexOf('mwa-gm-checkbox') !== -1) {
-                updateCount();
+                refreshSelection();
             }
         });
 
         els.previewBtn.addEventListener('click', doPreview);
         els.sendBtn.addEventListener('click', doSend);
 
+        // T1: edit the comment right inside the preview; the textarea and the
+        // editable zone stay in sync while the other one is not focused.
+        els.previewEdit.addEventListener('click', toggleCommentEdit);
+        els.comment.addEventListener('input', function() {
+            var field = previewCommentField();
+            if (!field || document.activeElement === field) {
+                return;
+            }
+            field.innerText = els.comment.value;
+        });
+
+        // T3a: chips inside the preview card switch the shown student without
+        // re-querying (the first time per student it is cached, see the
+        // acceptance checklist: at most one call per student).
+        els.previewChips.addEventListener('click', function(ev) {
+            var el = ev.target;
+            while (el && el !== els.previewChips) {
+                if (String(el.tagName || '').toUpperCase() === 'BUTTON' && el.getAttribute('data-studentid')) {
+                    showStudentPreview(parseInt(el.getAttribute('data-studentid'), 10));
+                    return;
+                }
+                el = el.parentNode;
+            }
+        });
+
         els.histState.addEventListener('change', function() {
             hist.state = els.histState.value;
             loadHistory(true);
         });
         els.histMore.addEventListener('click', function() { loadHistory(false); });
+
+        // T3b: per-row delete (delegated over the paged tbody).
+        els.histRows.addEventListener('click', function(ev) {
+            var el = ev.target;
+            while (el && el !== els.histRows) {
+                if (String(el.tagName || '').toUpperCase() === 'BUTTON' && el.getAttribute('data-delhist')) {
+                    var rid = parseInt(el.getAttribute('data-delhist'), 10);
+                    openConfirm(t('hist_del_title'), t('hist_del_body'), function() {
+                        if (busy) {
+                            return;
+                        }
+                        busy = true;
+                        callWS('block_mwa_dashboard_delete_grades_mail_record', {id: rid})
+                            .then(function(res) {
+                                if (res && res.success) {
+                                    var ix = -1;
+                                    for (var i = 0; i < hist.rows.length; i++) {
+                                        if (Number(hist.rows[i].recordid) === rid) {
+                                            ix = i;
+                                            break;
+                                        }
+                                    }
+                                    if (ix !== -1) {
+                                        hist.rows.splice(ix, 1);
+                                        if (hist.total > 0) {
+                                            hist.total--;
+                                        }
+                                    }
+                                    renderHistory();
+                                } else {
+                                    // Refused by the backend (not owner, not a
+                                    // 'Grades' row, or already gone).
+                                    openAlert(t('error_title'), t('error_generic'));
+                                }
+                            }).catch(function(err) {
+                                openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
+                            }).then(function() {
+                                busy = false;
+                            });
+                    });
+                    return;
+                }
+                el = el.parentNode;
+            }
+        });
+
+        // T3b: clear the whole history (reinforced, permanent confirmation).
+        els.histClear.addEventListener('click', function() {
+            if (els.histClear.disabled || hist.total === 0) {
+                return;
+            }
+            openConfirm(t('hist_clear_title'), t('hist_clear_body'), function() {
+                if (busy) {
+                    return;
+                }
+                busy = true;
+                els.histClear.disabled = true;
+                callWS('block_mwa_dashboard_clear_grades_mail_history', {
+                    courseid: courseid,
+                    groupid: groupid
+                }).then(function(res) {
+                    var n = (res && typeof res.deleted === 'number') ? res.deleted : 0;
+                    hist.rows = [];
+                    hist.total = 0;
+                    hist.offset = 0;
+                    renderHistory();
+                    openAlert(t('hist_clear_title'), t('hist_clear_done').replace('{count}', String(n)));
+                }).catch(function(err) {
+                    openAlert(t('error_title'), ((err && err.message) ? err.message : t('error_generic')));
+                }).then(function() {
+                    busy = false;
+                    els.histClear.disabled = (hist.total === 0);
+                });
+            });
+        });
     };
 
     // ---------- Data loading (get_grades + get_grades_send_options in parallel). ----------

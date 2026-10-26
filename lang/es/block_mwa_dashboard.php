@@ -101,5 +101,17 @@ $string['gradesmail_confirm_send'] = 'Enviar ahora';
 $string['gradesmail_alert_noselection'] = 'Selecciona al menos un estudiante primero.';
 $string['gradesmail_error_title'] = 'Algo salió mal';
 $string['gradesmail_error_generic'] = 'La solicitud falló. Por favor, inténtalo de nuevo.';
+// Vista previa editable (T1) + chips de estudiantes seleccionados (T3a).
+$string['gradesmail_preview_edit'] = 'Editar';
+$string['gradesmail_preview_done'] = 'Listo';
+$string['gradesmail_preview_chips_hint'] = 'Haz clic en un nombre para ver su correo';
+// Gestión del historial (T3b): borrar por fila + limpiar todo.
+$string['gradesmail_hist_del_title'] = '¿Borrar este registro?';
+$string['gradesmail_hist_del_body'] = 'Se eliminará el registro de envío de notas de este estudiante. Esta acción no se puede deshacer.';
+$string['gradesmail_hist_del_row'] = 'Borrar registro';
+$string['gradesmail_hist_clear'] = 'Limpiar historial';
+$string['gradesmail_hist_clear_title'] = '¿Limpiar todo el historial?';
+$string['gradesmail_hist_clear_body'] = 'Se borrarán permanentemente todos los registros de envío de notas de este curso. Esta acción no se puede deshacer.';
+$string['gradesmail_hist_clear_done'] = 'Historial limpiado: {count} registro(s) eliminado(s).';
 
 $string['invalidrecipient'] = 'El destinatario seleccionado no es un usuario activo y matriculado en este curso.';
