@@ -806,6 +806,11 @@ class external extends \external_api {
      * the requested student's row is read, so another student's grades can never
      * leak into the message.
      *
+     * The teacher comment (the only free-form input) is wrapped in a stable
+     * anchor (\div[data-gm-editable="comment"]) so the in-app preview can make
+     * that — and only that — zone editable. Everything else (greeting, date,
+     * global result, grades table, footer) is always rebuilt from the DB.
+     *
      * @param int $courseid Course ID.
      * @param int $userid Recipient student user ID.
      * @param int $groupid Optional course group scope.
@@ -815,6 +820,15 @@ class external extends \external_api {
     private static function build_grades_mail(int $courseid, int $userid, int $groupid = 0, string $comment = ''): array {
         $course  = get_course($courseid);
         $comment = trim($comment);
+        // Bound the only free-form input: 2000 characters, silent truncation
+        // (the comment is a supporting note, not the email payload).
+        if (strlen($comment) > 2000) {
+            if (function_exists('mb_substr')) {
+                $comment = mb_substr($comment, 0, 2000);
+            } else {
+                $comment = substr($comment, 0, 2000);
+            }
+        }
 
         $rows = api::get_grades($courseid, $groupid);
         $meta = null;
@@ -848,15 +862,27 @@ class external extends \external_api {
                 ['course' => $course->fullname]);
         }
 
-        $bodyhtml  = \html_writer::tag('p', s(get_string('gradesmail_email_hi', 'block_mwa_dashboard', ['name' => $fullname])));
+        // --- Email body ---------------------------------------------------------
+        // Gmail/Outlook-safe: no <style> block, no floats, no external CSS.
+        // A single wrapper div + fully inline styles on every tag (web-safe
+        // font stack, fixed table borders and header background) so the mail
+        // renders identically in Gmail and Outlook web.
+        $bodyhtml = \html_writer::start_tag('div', [
+            'style' => 'margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2937;',
+        ]);
+        $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_hi', 'block_mwa_dashboard', ['name' => $fullname])),
+            ['style' => 'margin:0 0 12px;']);
         $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_intro', 'block_mwa_dashboard',
-            ['course' => $course->fullname, 'date' => userdate(time())])));
+            ['course' => $course->fullname, 'date' => userdate(time())])),
+            ['style' => 'margin:0 0 12px;']);
 
         if ($hasgrade) {
             $bodyhtml .= \html_writer::tag('p', \html_writer::tag('strong',
-                s(get_string('gradesmail_email_global', 'block_mwa_dashboard', ['grade' => $gradeformatted]))));
+                s(get_string('gradesmail_email_global', 'block_mwa_dashboard', ['grade' => $gradeformatted]))),
+                ['style' => 'margin:0 0 16px;']);
         } else {
-            $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_no_grade', 'block_mwa_dashboard')));
+            $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_no_grade', 'block_mwa_dashboard')),
+                ['style' => 'margin:0 0 16px;']);
         }
 
         $rowshtml = '';
@@ -864,17 +890,37 @@ class external extends \external_api {
             for ($i = 1; isset($meta['act_' . $i]); $i++) {
                 $actname = (string)($meta['act_' . $i] ?? '');
                 $value   = $row['act_' . $i] ?? '-';
+                // Value classification for the colouring only: any recorded
+                // (numeric) grade is "passed" (green bold); a pending one is
+                // shown in italic orange. Deliberately independent of any
+                // activity pass mark - the email cannot depend on the UI filter.
+                $valuestyle = is_numeric($value)
+                    ? 'color:#1e7e34;font-weight:bold;'
+                    : 'color:#b26a00;font-style:italic;';
                 $rowshtml .= \html_writer::tag('tr',
-                    \html_writer::tag('td', s($actname), ['style' => 'text-align:left;']) .
-                    \html_writer::tag('td', s(self::grades_mail_format_value($value)), ['style' => 'text-align:right;white-space:nowrap;']));
+                    \html_writer::tag('td', s($actname),
+                        ['style' => 'padding:8px 12px;border-bottom:1px solid #e6eaef;text-align:left;color:#1f2937;']) .
+                    \html_writer::tag('td', s(self::grades_mail_format_value($value)),
+                        ['style' => 'padding:8px 12px;border-bottom:1px solid #e6eaef;text-align:right;white-space:nowrap;' . $valuestyle]));
             }
         }
         if ($rowshtml !== '') {
-            $tablehtml  = \html_writer::start_tag('table', ['width' => '100%', 'cellspacing' => '0', 'cellpadding' => '4']);
+            $tablehtml  = \html_writer::start_tag('table', [
+                'role'        => 'presentation',
+                'width'       => '100%',
+                'cellpadding' => '0',
+                'cellspacing' => '0',
+                'border'      => '0',
+                'style'       => 'border-collapse:collapse;margin:0 0 16px;border:1px solid #d9dee5;',
+            ]);
             $tablehtml .= \html_writer::start_tag('thead');
             $tablehtml .= \html_writer::start_tag('tr');
-            $tablehtml .= \html_writer::tag('th', s(get_string('gradesmail_email_activity', 'block_mwa_dashboard')), ['style' => 'text-align:left;']);
-            $tablehtml .= \html_writer::tag('th', s(get_string('gradesmail_email_grade', 'block_mwa_dashboard')), ['style' => 'text-align:right;']);
+            $tablehtml .= \html_writer::tag('th', s(get_string('gradesmail_email_activity', 'block_mwa_dashboard')),
+                ['style' => 'background:#f1f3f7;color:#1f2937;font-size:12px;letter-spacing:.4px;text-transform:uppercase;' .
+                             'padding:8px 12px;text-align:left;border-bottom:1px solid #d9dee5;']);
+            $tablehtml .= \html_writer::tag('th', s(get_string('gradesmail_email_grade', 'block_mwa_dashboard')),
+                ['style' => 'background:#f1f3f7;color:#1f2937;font-size:12px;letter-spacing:.4px;text-transform:uppercase;' .
+                             'padding:8px 12px;text-align:right;border-bottom:1px solid #d9dee5;']);
             $tablehtml .= \html_writer::end_tag('tr');
             $tablehtml .= \html_writer::end_tag('thead');
             $tablehtml .= \html_writer::start_tag('tbody');
@@ -884,15 +930,22 @@ class external extends \external_api {
             $bodyhtml .= $tablehtml;
         }
 
+        // Editable zone of the in-app preview: the frontend enables
+        // contenteditable only inside this anchor (the label stays static).
         if ($comment !== '') {
+            $bodyhtml .= \html_writer::start_tag('div', ['data-gm-editable' => 'comment', 'style' => 'margin:0 0 16px;']);
             $bodyhtml .= \html_writer::tag('p', \html_writer::tag('strong',
-                s(get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard'))));
+                s(get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard'))),
+                ['style' => 'margin:0 0 6px;']);
             $bodyhtml .= \html_writer::tag('p', format_text($comment, FORMAT_MOODLE,
-                ['context' => \context_course::instance($courseid)]));
+                ['context' => \context_course::instance($courseid)]),
+                ['data-gm-field' => 'commenttext', 'style' => 'margin:0;']);
+            $bodyhtml .= \html_writer::end_tag('div');
         }
 
         $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_footer', 'block_mwa_dashboard')),
-            ['style' => 'color:#666;font-size:90%;']);
+            ['style' => 'margin:16px 0 0;padding-top:12px;border-top:1px solid #e6eaef;color:#6b7280;font-size:12px;']);
+        $bodyhtml .= \html_writer::end_tag('div');
 
         return [
             'subject'     => $subject,
@@ -1431,6 +1484,123 @@ class external extends \external_api {
                 'subject'       => new \external_value(PARAM_TEXT, 'Email subject (truncated)'),
                 'moodlelinked'  => new \external_value(PARAM_BOOL, 'True when the Moodle message was linked (message id stored)'),
             ])),
+        ]);
+    }
+
+    /* ── grades mail history management (delete row / clear history) ── */
+
+    public static function delete_grades_mail_record_parameters() {
+        return new \external_function_parameters([
+            'id' => new \external_value(PARAM_INT, 'Record ID in block_mwa_dashboard_messages'),
+        ]);
+    }
+
+    /**
+     * Delete a single grades-mail audit row from the send history.
+     *
+     * Only rows registered by send_grades_mail() (intervention_reason 'Grades')
+     * can be removed through this web service: pedagogical intervention records
+     * are never touched here. The caller must own the record or be a site
+     * administrator (same rule as delete_intervention()).
+     *
+     * @param int $id Record ID in block_mwa_dashboard_messages.
+     * @return array success flag.
+     */
+    public static function delete_grades_mail_record(int $id): array {
+        global $DB, $USER;
+
+        $params = self::validate_parameters(self::delete_grades_mail_record_parameters(), ['id' => $id]);
+
+        $record = $DB->get_record('block_mwa_dashboard_messages', ['id' => $params['id']], '*', IGNORE_MISSING);
+        if (!$record) {
+            return ['success' => false];
+        }
+
+        // Hard restriction: this web service only manages grades-mail audit rows,
+        // never pedagogical interventions (defense in depth, even though the
+        // history UI only lists 'Grades' rows).
+        if ((string)$record->intervention_reason !== 'Grades') {
+            return ['success' => false];
+        }
+
+        $ctx = \context_course::instance($record->courseid);
+        self::validate_context($ctx);
+        require_capability('block/mwa_dashboard:view', $ctx);
+        require_capability('block/mwa_dashboard:manageinterventions', $ctx);
+
+        // Only the original sender (or a site admin) can delete the row.
+        if ((int)$record->teacherid !== (int)$USER->id
+            && !has_capability('moodle/site:config', \context_system::instance())) {
+            return ['success' => false];
+        }
+
+        $transaction = $DB->start_delegated_transaction();
+        $DB->delete_records('block_mwa_dashboard_messages', ['id' => $params['id']]);
+        $transaction->allow_commit();
+
+        return ['success' => true];
+    }
+
+    public static function delete_grades_mail_record_returns() {
+        return new \external_single_structure([
+            'success' => new \external_value(PARAM_BOOL, 'Whether the record was deleted'),
+        ]);
+    }
+
+    public static function clear_grades_mail_history_parameters() {
+        return new \external_function_parameters([
+            'courseid' => new \external_value(PARAM_INT, 'Course ID'),
+            'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+        ]);
+    }
+
+    /**
+     * Clear the grades-mail send history in the course, permanently.
+     *
+     * Non-admin teachers only remove their own rows (teacherid = current user);
+     * a site administrator removes every teacher's rows. Pedagogical
+     * intervention records (intervention_reason <> 'Grades') are never deleted.
+     *
+     * @param int $courseid Course ID.
+     * @param int $groupid Optional course group scope (validated, not used as a filter).
+     * @return array success flag and number of deleted records.
+     */
+    public static function clear_grades_mail_history(int $courseid, int $groupid = 0): array {
+        global $DB, $USER;
+
+        $params = self::validate_parameters(self::clear_grades_mail_history_parameters(), [
+            'courseid' => $courseid,
+            'groupid'  => $groupid,
+        ]);
+        $ctx = \context_course::instance($params['courseid']);
+        self::validate_context($ctx);
+        require_capability('block/mwa_dashboard:view', $ctx);
+        require_capability('block/mwa_dashboard:manageinterventions', $ctx);
+        self::validate_group_scope($params['courseid'], $params['groupid'], $ctx);
+
+        $isadmin = has_capability('moodle/site:config', \context_system::instance());
+
+        $wheresql    = 'courseid = :courseid AND intervention_reason = :reason';
+        $whereparams = [
+            'courseid' => (int)$params['courseid'],
+            'reason'   => 'Grades',
+        ];
+        if (!$isadmin) {
+            $wheresql .= ' AND teacherid = :teacherid';
+            $whereparams['teacherid'] = (int)$USER->id;
+        }
+
+        $transaction = $DB->start_delegated_transaction();
+        $deleted     = $DB->delete_records_select('block_mwa_dashboard_messages', $wheresql, $whereparams);
+        $transaction->allow_commit();
+
+        return ['success' => true, 'deleted' => (int)$deleted];
+    }
+
+    public static function clear_grades_mail_history_returns() {
+        return new \external_single_structure([
+            'success' => new \external_value(PARAM_BOOL, 'Whether the history was cleared'),
+            'deleted' => new \external_value(PARAM_INT, 'Number of deleted records'),
         ]);
     }
 

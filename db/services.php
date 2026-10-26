@@ -73,6 +73,22 @@ $functions = [
         'ajax'          => true,
         'loginrequired' => true,
     ],
+    'block_mwa_dashboard_delete_grades_mail_record' => [
+        'classname'     => 'block_mwa_dashboard\external',
+        'methodname'    => 'delete_grades_mail_record',
+        'description'   => 'Delete a single grades-mail audit row from the history',
+        'type'          => 'write',
+        'ajax'          => true,
+        'loginrequired' => true,
+    ],
+    'block_mwa_dashboard_clear_grades_mail_history' => [
+        'classname'     => 'block_mwa_dashboard\external',
+        'methodname'    => 'clear_grades_mail_history',
+        'description'   => 'Clear the grades-mail send history of the current teacher in the course',
+        'type'          => 'write',
+        'ajax'          => true,
+        'loginrequired' => true,
+    ],
     'block_mwa_dashboard_send_message' => [
         'classname'     => 'block_mwa_dashboard\external',
         'methodname'    => 'send_message',

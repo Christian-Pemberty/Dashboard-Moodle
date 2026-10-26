@@ -72,11 +72,20 @@ $PAGE->requires->js_call_amd('block_mwa_dashboard/enviarnotas', 'init', [
     [
         'courseid' => $courseid,
         'groupid'  => 0,
-        'str'      => $gmstr,
     ],
 ]);
 
 echo $OUTPUT->header();
+
+// The ~60 UI strings are handed to the AMD module through this inline JSON
+// block (window.MWA_GRADEMAIL_STR) instead of as js_call_amd() arguments:
+// passing them there would push the argument string well past the 1024-char
+// limit and trigger the core "Too much data passed as arguments" debugging
+// notice. JSON_HEX_TAG keeps the inline <script> safe even if a translated
+// string ever contains "</script>".
+$gmstrjson = json_encode($gmstr, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE);
+echo html_writer::tag('script', 'window.MWA_GRADEMAIL_STR=' . $gmstrjson . ';',
+    ['type' => 'application/javascript']);
 
 // Build the static fallback markup with start_tag()/end_tag(). Those helpers
 // have a stable signature in every Moodle version (the 2nd argument of

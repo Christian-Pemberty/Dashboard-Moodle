@@ -920,7 +920,12 @@ define(['core/ajax'], function(Ajax) {
         params = params || {};
         courseid = params.courseid ? parseInt(params.courseid, 10) : 0;
         groupid = params.groupid ? parseInt(params.groupid, 10) : 0;
-        str = params.str || {};
+        // The localised UI strings arrive via window.MWA_GRADEMAIL_STR (inline
+        // JSON rendered by enviarnotas.php). The params.str fallback keeps
+        // direct / legacy calls working too.
+        str = (typeof window.MWA_GRADEMAIL_STR === 'object' && window.MWA_GRADEMAIL_STR)
+            ? window.MWA_GRADEMAIL_STR
+            : (params.str || {});
 
         var root = document.getElementById('mwaGradesMailRoot');
         if (!root) {
