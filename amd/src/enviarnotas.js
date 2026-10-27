@@ -552,9 +552,9 @@ define(['core/ajax'], function(Ajax) {
                 msg = t('passmin_none');
             }
         } else if (students.length > 0 && activities.length === 0) {
-            // T5: the course has students but no visible graded activity (e.g.
-            // all grade items hidden in the gradebook). Explain the cause
-            // instead of leaving the select silently disabled.
+            // T5/T6: the course has students but no graded activity at all —
+            // since T6, hidden items are selectable, so reaching this state
+            // means the course simply has no grade item to offer.
             msg = t('evalselect_empty');
         }
         els.passHint.textContent = msg;
@@ -564,6 +564,10 @@ define(['core/ajax'], function(Ajax) {
         var opts = '';
         activities.forEach(function(a) {
             var label = (a && a.name) ? a.name : ('#' + a.cmid);
+            // T6: tag grade items hidden in the gradebook (still selectable here).
+            if (a && a.hidden) {
+                label += ' ' + t('act_hidden_tag');
+            }
             if (a && Number(a.grademax) > 0) {
                 label += ' (' + fmt(a.grademax) + ')';
             }
@@ -1196,7 +1200,10 @@ define(['core/ajax'], function(Ajax) {
     var loadInitial = function() {
         callWS('block_mwa_dashboard_get_grades', {
             courseid: courseid,
-            groupid: groupid
+            groupid: groupid,
+            // T6 (grades-send flow): include items hidden in the gradebook so
+            // the roster/preview match what can actually be selected below.
+            includehidden: true
         }).then(function(res) {
             parseStudents(res);
         }).catch(function() {

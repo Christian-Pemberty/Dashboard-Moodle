@@ -543,17 +543,23 @@ class external extends \external_api {
         return new \external_function_parameters([
             'courseid' => new \external_value(PARAM_INT, 'Course ID'),
             'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+            // T6: grades-send flow opt-in; the declaration order below MUST
+            // stay in sync with the get_grades() signature order.
+            'includehidden' => new \external_value(PARAM_BOOL, 'Include grade items hidden in the gradebook (grades-send flow)', VALUE_DEFAULT, false),
         ]);
     }
 
-    public static function get_grades(int $courseid, int $groupid = 0): array {
-        $params = self::validate_parameters(self::get_grades_parameters(), compact('courseid', 'groupid'));
+    public static function get_grades(int $courseid, int $groupid = 0, bool $includehidden = false): array {
+        $params = self::validate_parameters(self::get_grades_parameters(),
+            compact('courseid', 'groupid', 'includehidden'));
         $ctx    = \context_course::instance($params['courseid']);
         self::validate_context($ctx);
         require_capability('block/mwa_dashboard:view', $ctx);
 
         $groupid = self::validate_group_scope($params['courseid'], $params['groupid'], $ctx);
-        $grades = api::get_grades($params['courseid'], $groupid);
+        // T6: the grades-send page passes true so items hidden in the gradebook
+        // stay selectable and sendable; every other caller keeps false.
+        $grades = api::get_grades($params['courseid'], $groupid, $includehidden);
         return ['grades' => json_encode($grades), 'count' => count($grades)];
     }
 
@@ -801,10 +807,11 @@ class external extends \external_api {
     /**
      * Build the exact grades notification (subject, HTML and plain body) for one student.
      *
-     * The single source of data is api::get_grades(): hidden grade items, excluded
-     * activities and course-group restrictions are already filtered there, and only
-     * the requested student's row is read, so another student's grades can never
-     * leak into the message.
+     * The single source of data is api::get_grades() with hidden grade items
+     * INCLUDED (T6 decision for the grades-send flow: the teacher explicitly
+     * selects them to send). Excluded activities and course-group restrictions
+     * are still filtered there, and only the requested student's row is read,
+     * so another student's grades can never leak into the message.
      *
      * The teacher comment (the only free-form input) is wrapped in a stable
      * anchor (\div[data-gm-editable="comment"]) so the in-app preview can make
@@ -830,7 +837,10 @@ class external extends \external_api {
             }
         }
 
-        $rows = api::get_grades($courseid, $groupid);
+        // T6 (grades-send flow): include grade items hidden in the gradebook —
+        // WYSIWYG: what the teacher previews is exactly what is sent. All the
+        // other consumers of api::get_grades() keep the hidden exclusion.
+        $rows = api::get_grades($courseid, $groupid, true);
         $meta = null;
         $row  = null;
         foreach ($rows as $r) {
@@ -1236,6 +1246,12 @@ class external extends \external_api {
      *  - explicit item pass mark (> 0) is used when defined;
      *  - otherwise the default 50% of the maximum applies.
      *
+     * T6: activities whose grade item is hidden in the gradebook are INCLUDED
+     * in this list (the send page can select and send them) and exposed with
+     * "hidden" => true so the UI can tag them "(oculta)"; the grade_items
+     * lookup below deliberately does NOT filter hidden items, so they keep
+     * their real grademax / gradepass values.
+     *
      * @param int $courseid Course ID.
      * @param int $groupid Optional course group scope.
      * @return array Key "activities": list of activity options.
@@ -1254,7 +1270,9 @@ class external extends \external_api {
         $groupid = self::validate_group_scope($params['courseid'], $params['groupid'], $ctx);
 
         $meta = null;
-        foreach (api::get_grades($params['courseid'], $groupid) as $r) {
+        // T6: include grade items hidden in the gradebook (see docblock) so
+        // they remain selectable in the send page.
+        foreach (api::get_grades($params['courseid'], $groupid, true) as $r) {
             if ($r && ($r['__mwa_type__'] ?? '') === 'activity_names') {
                 $meta = $r;
                 break;
@@ -1295,6 +1313,7 @@ class external extends \external_api {
                 'grademax'            => 0,
                 'passmark'            => 0,
                 'hascustompassmark'   => false,
+                'hidden'              => (bool)($meta['act_hidden_' . $i] ?? 0),
             ];
             if ($cmid > 0 && isset($cmmap[$cmid])) {
                 $itemrows = $DB->get_records(
@@ -1304,7 +1323,8 @@ class external extends \external_api {
                         'itemmodule'   => $cmmap[$cmid]->modname,
                         'iteminstance' => (int)$cmmap[$cmid]->instance,
                         'itemtype'     => 'mod',
-                        'hidden'       => 0,
+                        // T6: no 'hidden' filter here — hidden items must keep
+                        // their real grademax / gradepass in the send options.
                     ],
                     'sortorder, id',
                     'id, grademax, gradepass'
@@ -1341,6 +1361,7 @@ class external extends \external_api {
                 'grademax'            => new \external_value(PARAM_FLOAT, 'Grade maximum (0 when unknown)'),
                 'passmark'            => new \external_value(PARAM_FLOAT, 'Pass mark, explicit in Moodle or derived (0 when unknown)'),
                 'hascustompassmark'   => new \external_value(PARAM_BOOL, 'True when Moodle has an explicit pass mark for this activity'),
+                'hidden'              => new \external_value(PARAM_BOOL, 'True when the grade item is hidden in the gradebook (still selectable and sendable)'),
             ])),
         ]);
     }

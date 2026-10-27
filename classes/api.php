@@ -755,9 +755,12 @@ class api {
         if (empty($allitems)) {
             return self::grade_roster_rows($courseid, $students);
         }
-        // Filter: module items only (itemtype='mod'), visible, sorted by sortorder.
-        $items = array_filter($allitems, function($item) {
-            return $item->itemtype === 'mod' && !$item->hidden;
+        // Filter: module items only (itemtype='mod'), sorted by sortorder.
+        // T6 (grades-send flow): items hidden in the gradebook are included too
+        // when the caller opts in; the flag defaults to false, so dashboard,
+        // snapshots and export keep the historical hidden exclusion.
+        $items = array_filter($allitems, function($item) use ($includehidden) {
+            return $item->itemtype === 'mod' && ($includehidden || !$item->hidden);
         });
         usort($items, function($a, $b) { return $a->sortorder - $b->sortorder; });
         if (empty($items)) {
@@ -1054,6 +1057,9 @@ class api {
             $actnames['act_availablefrom_' . $seq] = $available[$item->id]['availablefrom'] ?? 0;
             $actnames['act_availableuntil_' . $seq] = $available[$item->id]['availableuntil'] ?? 0;
             $actnames['act_duedate_' . $seq] = $available[$item->id]['duedate'] ?? 0;
+            // T6: per-item gradebook visibility, so the send page can tag hidden
+            // activities ("(oculta)") without re-querying the gradebook.
+            $actnames['act_hidden_' . $seq] = (int)($item->hidden ?? 0);
         }
         // Student rows.
         $rows = [$actnames];

@@ -41,10 +41,16 @@
 > (`block_mwa_dashboard/`) se mantiene al día para subir al repo
 > `Christian-Pemberty/Dashboard-Moodle` (rama `main`).
 
-> Estado actual: v **2026102701** desplegada y **verificada 100% en vivo** (2ª sesión
-> 27-oct, `_diag56.sh`: version+WS=20, markers min/3-lang, HTTP 200/303, restart OK).
-> **T6 (v2026102702) EN PROGRESO** — diseño en §T6; pendiente terminar código +
-> AMD + deploy + verificación + aceptación.
+> Estado actual: v **2026102701** verificada en vivo; **T6 CÓDIGO + DEPLOY v2026102702
+> COMPLETADOS** (27-oct, sesión 3): `api::get_grades(includehidden)` + filtro + meta
+> `act_hidden_i` · WS `get_grades` con `includehidden` · `get_grades_send_options` con
+> `hidden` (sin filtro en la query de `grade_items`) · `build_grades_mail` con hidden
+> incluido · JS (`loadInitial` + etiqueta `(oculta)`) · lang en/es/pt_br (`act_hidden_tag`,
+> `evalselect_empty` reescrita) · `$gmkeys` · tests (1 invertido + 2 nuevos) · AMD
+> regenerado (terser 5.51.2, 12/12 markers). Deploy verificado: version=2026102702,
+> WS=20, markers LIVE, restart healthy, HTTP 200/303. **PENDIENTE: aceptación del usuario
+> en el navegador (curso 4: selector con quizzes "(oculta)", nota mínima activa, preview
+> con notas, 1 envío real) + push a `main`.**
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
 > Contrato WYSIWYG existente: preview y envío usan la misma fuente de verdad —
 > `\block_mwa_dashboard\external::build_grades_mail()` (external.php:815) —
@@ -485,47 +491,35 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
   probe simple funciona); `_diag56.sh` la cubrió completa. Si se repita: dividir
   secciones / evitar el bloque PHP largo al inicio.
 
-### 6.3 Diseño de implementación (v2026102702)
+### 6.3 Diseño de implementación (v2026102702) — ✅ TODO IMPLEMENTADO (27-oct, sesión 3)
 1. **`classes/api.php` → `get_grades(int $courseid, int $groupid = 0, bool $includehidden = false)`**
-   - ✅ HECHO (27-oct): firma + docblock `@param $includehidden`.
-   - ⬜ PENDIENTE: filtro de ítems (hoy línea ~756):
-     `return $item->itemtype === 'mod' && ($includehidden || !$item->hidden);`
-   - ⬜ PENDIENTE: meta nueva por ítem (junto a `act_cmid_/act_module_`, línea ~1047):
-     `$actnames['act_hidden_' . $seq] = (int)$item->hidden;`
-2. **`classes/external.php`:**
-   - `get_grades_parameters()` + `get_grades(...)`: nuevo parámetro **`includehidden`**
-     (`PARAM_BOOL`, `VALUE_DEFAULT` false, **AL FINAL** — respetar la regla de orden
-     declaración↔firma, ver warning en `get_grades_mail_preview_parameters`).
-     Pasar a `api::get_grades($cid, $gid, $params['includehidden'])` (hoy línea 556).
-   - `get_grades_send_options()` (línea 1243): llamar `api::get_grades(..., true)`;
-     array de actividad: añadir `'hidden' => (bool)($meta['act_hidden_' . $i] ?? 0)`;
-     **QUITAR `'hidden' => 0` de la query interna a `grade_items`** (línea 1307 — si no,
-     los ítems ocultos saldrían con `grademax=0`/`passmark=0`);
-     `_returns()`: nuevo `'hidden' => new \external_value(PARAM_BOOL, ...)`.
-   - `build_grades_mail()` (línea 820/833): `api::get_grades($courseid, $groupid, true)`
-     + docblock (flujos de envío incluyen ítems ocultos DE MANERA EXPLÍCITA; el resto de
-     consumidores mantiene la exclusión).
-3. **`amd/src/enviarnotas.js`:**
-   - `loadInitial()` (línea 1197): roster WS con `includehidden: true`.
-   - `populateActivities()` (línea 563): si `a.hidden` → `label += ' ' + t('act_hidden_tag')`
-     (antes del sufijo `(max)`, o después: `Nombre (oculta) (5)`).
-4. **lang en/es/pt_br:** nueva `gradesmail_act_hidden_tag` = "(oculta en la libreta)" /
-   "(hidden in the gradebook)" / "(oculta na libreta)"; **adaptar** `gradesmail_evalselect_empty`
-   (ahora solo aparece si NO HAY NINGÚN ítem con nota en absoluto): "No se encontró
-   ninguna actividad con nota en este curso. Agrega una actividad calificada (quiz,
-   tarea...) y aparecerá en el selector." (3 idiomas).
-5. **`enviarnotas.php`:** `'act_hidden_tag'` en `$gmkeys` (línea ~50).
-6. **`tests/send_grades_mail_test.php`:**
-   - `test_email_excludes_hidden_grade_items` → REESCRIBIR como `test_email_preview_includes_hidden_grade_items`
-     (la preview del FLUJO DE ENVÍO incluye la nota 9.9 del assign oculto — aserción invertida,
-     nombre/docblock nuevos dejando clara la decisión T6).
-   - NUEVO: `test_api_default_still_excludes_hidden` (dashboard/snapshots intactos:
-     `api::get_grades(4)` sin flag → el ítem oculto NO aparece en la meta).
-   - NUEVO (opcional): `test_send_options_exposes_hidden_flag` (`get_grades_send_options`
-     devuelve `hidden=true` + `grademax>0` + `passmark` del 50% para el ítem oculto).
-7. **`version.php` → 2026102702** · README/ESTRUCTURA si tocan contratos · AMD:
-   regenerar `amd/build/enviarnotas.min.js` (terser `--comments jsdoc`), `node --check`,
-   markers: los 9 anteriores + `act_hidden_tag`.
+   - ✅ firma + docblock `@param $includehidden`.
+   - ✅ filtro de ítems: `return $item->itemtype === 'mod' && ($includehidden || !$item->hidden);`
+     (con comentario T6 explicando que dashboard/snapshots/export siguen excluyendo).
+   - ✅ meta por ítem: `$actnames['act_hidden_' . $seq] = (int)($item->hidden ?? 0);`
+2. **`classes/external.php`:** ✅
+   - `get_grades_parameters()` + `get_grades(...)`: `includehidden` (`PARAM_BOOL`,
+     `VALUE_DEFAULT` false, **AL FINAL**) → `api::get_grades($cid, $gid, $includehidden)`.
+   - `get_grades_send_options()`: `api::get_grades(..., true)`; `'hidden' => (bool)($meta['act_hidden_'.$i] ?? 0)`;
+     `'hidden' => 0` **QUITADO** de la query a `grade_items` (comment inline T6);
+     `'hidden' => new \external_value(PARAM_BOOL, ...)` en `_returns()`.
+   - `build_grades_mail()`: `api::get_grades($courseid, $groupid, true)` + docblock actualizado.
+3. **`amd/src/enviarnotas.js`:** ✅ `loadInitial()` roster con `includehidden: true`;
+   `populateActivities()` etiqueta `t('act_hidden_tag')` cuando `a.hidden`;
+   comentario de `refreshPassmarkHint()` ajustado (T5/T6). **AMD regenerado** (terser
+   5.51.2, `--comments jsdoc`, `node --check` OK; **12/12 markers**: los 9 previos +
+   `act_hidden_tag`, `includehidden`, `act_hidden_`).
+4. **lang en/es/pt_br:** ✅ `gradesmail_act_hidden_tag` ("(oculta en la libreta)" /
+   "(hidden in the gradebook)" / "(oculta na libreta)") + `gradesmail_evalselect_empty`
+   adaptada (solo si NO HAY ningún ítem con nota en absoluto).
+5. **`enviarnotas.php`:** ✅ `'act_hidden_tag'` en `$gmkeys`.
+6. **`tests/send_grades_mail_test.php`:** ✅
+   - `test_email_excludes_hidden_grade_items` → **`test_email_preview_includes_hidden_grade_items`**
+     (aserción invertida: el 9.9 del assign oculto SÍ está en el preview).
+   - NUEVO `test_api_default_still_excludes_hidden` (sin flag: 1 act; con flag: 2 acts).
+   - NUEVO `test_send_options_exposes_hidden_flag` (hidden=true + max 10 + passmark 5).
+   - Helper nuevo `count_activity_meta()`. `php -l` OK en los 8 PHP tocados.
+7. **`version.php` → 2026102702** ✅.
 
 ### 6.4 Deploy + verificación (procedimiento verificado `_depl55`+inner)
 1. Robocopy staging → `_stage2702_block_mwa_dashboard` (sin `.git`, sin `stage*` anidado)
@@ -544,13 +538,63 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
    campo nota mínima activo (fallback 50%), preview muestra las notas, 1 envío real.
 6. Push GitHub `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
 
-### 6.5 Estado al cierre de sesión (27-oct, corte por tokens)
+### 6.5 Estado al cierre de sesión 27-oct (corte por tokens) → **ACTUALIZADO sesión 3**
 - [x] T5: v2026102701 **verificación live COMPLETA** (`_diag56.sh`) — cerrado.
 - [x] T6: decisión del usuario + alcance + verificación de factibilidad WS (Moodle 5).
-- [~] T6: `api.php` — SOLO la firma nueva + docblock (el resto NO tocado; código
-      válido y desplegable tal cual, pero la funcionalidad NO activa todavía).
-- [ ] Resto de §6.3 (filtro+meta api, external, JS, lang, $gmkeys, tests, version, AMD)
-  → deploy 2026102702 → §6.4 → aceptación → push.
+- [x] T6: `api.php` — firma + docblock.
+- [x] T6: resto de §6.3 (filtro+meta api, external, JS, lang, $gmkeys, tests, version, AMD)
+  → **HECHO sesión 3 (27-oct noche)**.
+
+### 6.6 Deploy + verificación live v2026102702 (✅ sesión 3, 27-oct noche)
+- [x] Staging local `_stage2702_block_mwa_dashboard` (robocopy, **108 archivos**, sin
+      `.git`, sin `stage*` anidado, version 2026102702) → `scp` a host `/tmp/_stage2702…`.
+- [x] `_depl56.sh` (host) + `_inner7.sh` (contenedor, base64 en línea): **PRE_OK →
+      BACKUP_OK** (`cp -a` → `mwa_dashboard.bak.2026102702` conserva v2026102701) →
+      **SWAP_OK** (markers `act_hidden_tag`/`includehidden` en min) → `purge_caches` OK →
+      **`upgrade.php --non-interactive` OK: `++ 2026102702: Éxito`** → verificación DB:
+      **`config_plugins version=2026102702 | WS=20`** (con la query correcta: version es
+      FILA `name='version'`) → `INNER_DONE rc=0`.
+- [x] **H4/H5 (restart + smoke) ejecutados** en `_depl56b.sh` (ver lección §6.7):
+      `moodle_app | Up (healthy)`; HTTP root **200**, course 2 y 4 **200/303**.
+- [x] `_diag60.sh` live: version=2026102702 + WS=20 · container healthy · markers LIVE
+      (min `act_hidden_tag`+`includehidden`, api `act_hidden_`, external `act_hidden`,
+      lang en/es/pt_br, version) ✔ · **NO hay PHPUnit en el contenedor** (vendor ausente)
+      → los tests quedaron verificados por `php -l` local + check funcional CLI.
+- [~] Check funcional CLI (send_options/preview del curso 4): probe v5 corrió hasta
+      diagnosticar usuarios/roles pero **NO llegó a ejecutar las WS** (no se identificó
+      una cuenta con capability en la cadena de contextos 45→3→1; el docente real accede
+      desde la UI con credenciales propias). **Decisión usuario: dejar aquí** — la
+      aceptación se hace en el navegador (§6.7).
+
+### 6.7 LECCIONES NUEVAS (sesión 3, 27-oct noche)
+1. **`docker exec -i` dentro de un orquestador que corre VÍA STDIN se come el resto
+   del orquestador** (`_runssh.ps1` envía el script por stdin → `docker exec -i` hereda
+   ese stdin → bash termina en EOF = corte silencioso tras el inner, exit 0 aparente).
+   El T5 igualmente perdió H4-H6 por esto (no por el PHP fatal del one-liner).
+   **Regla:** ejecutar orquestadores como ARCHIVO en el host
+   (`bash /tmp/_depl56b.sh < /dev/null`) — nunca vía el runner stdin.
+2. **`get_records_sql` usa la primera columna como índice**: si no es única, Moodle
+   colapsa filas y `$row` queda como `stdClass` → "could not be converted to string".
+   Siempre nombrar la primera columna única (p. ej. `SELECT ra.id, ...`).
+3. **Contexto de curso ≠ id de curso**: `context_course::instance($cid)->id` (curso 4 →
+   contexto **45**; cadena: 45 → cat 3 → system 1). Las queries de roles/capabilities
+   deben ir contra los CONTEXTOS, no contra el courseid.
+4. `set_user()` **NO existe** en Moodle 5.0.1 CLI → usar `$USER = $DB->get_record('user', ['id'=>…])`.
+5. Diagnóstico de la cuenta docente (pendiente para la próxima sesión): el site tiene
+   user 2 `admin` (soporte.mym), user 3 `mym` (coursecreator @ system), user 1 guest;
+   **no se halló un `archetype-admin` con role_assignment en ctx=1** → para probes CLI
+   futuros, pedir el usuario exacto al user o buscar `role_capabilities` ALLOW.
+6. El `vendor` del Moodle 5.0.1 de producción **no trae PHPUnit** → los PHPUnit del
+   plugin solo pueden correr en un entorno de desarrollo con Moodle + vendor.
+
+### 6.8 Aceptación T6 (PENDIENTE — usuario, navegador, curso 4)
+- [ ] Selector "Actividad evaluada" muestra los quizzes **con `(oculta en la libreta)`**
+      (antes: deshabilitado con hint `evalselect_empty`).
+- [ ] Campo "Nota mínima" activo (fallback 50% de la máxima, editable).
+- [ ] Preview WYSIWYG muestra las notas de los quizzes ocultas por estudiante.
+- [ ] 1 envío real (canal email vía B OK desde el §T4) + auditoría `status=ok`.
+- [ ] Tablero del curso (fuera de "Enviar notas") **NO** cambió: sigue excluyendo ocultos.
+- [ ] Push GitHub `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
 
 ---
 

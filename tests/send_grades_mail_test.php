@@ -81,6 +81,27 @@ final class send_grades_mail_test extends \advanced_testcase {
     }
 
     /**
+     * Count how many act_i columns the activity_names metadata row carries.
+     *
+     * @param array $rows Rows produced by api::get_grades().
+     * @return int Number of activities in the metadata row (0 when absent).
+     */
+    private function count_activity_meta(array $rows): int {
+        foreach ($rows as $r) {
+            if (($r['__mwa_type__'] ?? '') === 'activity_names') {
+                $count = 0;
+                $i = 1;
+                while (array_key_exists('act_' . $i, $r)) {
+                    $count++;
+                    $i++;
+                }
+                return $count;
+            }
+        }
+        return 0;
+    }
+
+    /**
      * Enrol a user in a course and give them the plugin "view" capability but
      * strip the "manageinterventions" capability, so the grades mail
      * capability check is what fails.
@@ -310,10 +331,13 @@ final class send_grades_mail_test extends \advanced_testcase {
     }
 
     /**
-     * Hidden grade items must never appear in the grades email, whether or not
-     * the student has a grade recorded on them.
+     * T6 (2026-10-27 decision): the grades-SEND flow deliberately includes grade
+     * items hidden in the gradebook (the teacher selects and sends them without
+     * unhiding them). This test is the INVERTED version of the former
+     * "test_email_excludes_hidden_grade_items": the hidden assign's 9.9 must
+     * now appear in the preview/email.
      */
-    public function test_email_excludes_hidden_grade_items(): void {
+    public function test_email_preview_includes_hidden_grade_items(): void {
         $this->resetAfterTest(true);
 
         $course = $this->getDataGenerator()->create_course();
@@ -328,7 +352,54 @@ final class send_grades_mail_test extends \advanced_testcase {
 
         $this->assertStringContainsString('8.5 / 10', $preview['subject']);
         $this->assertStringContainsString('8.5', $preview['html']);
-        $this->assertStringNotContainsString('9.9', $preview['html']);
+        $this->assertStringContainsString('9.9', $preview['html']);
+    }
+
+    /**
+     * T6 regression guard: api::get_grades() WITHOUT the includehidden flag must
+     * still exclude hidden grade items (dashboard / snapshots / export keep the
+     * historical behaviour), while the send-flow opt-in includes them.
+     */
+    public function test_api_default_still_excludes_hidden(): void {
+        $this->resetAfterTest(true);
+
+        $course = $this->getDataGenerator()->create_course();
+        $ana = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5, 10, false);
+        $this->create_graded_assign($course, $ana, 9.9, 10, true);
+
+        $defaultcount = $this->count_activity_meta(\block_mwa_dashboard\api::get_grades($course->id));
+        $hiddencount = $this->count_activity_meta(\block_mwa_dashboard\api::get_grades($course->id, 0, true));
+
+        $this->assertSame(1, $defaultcount, 'Default must keep excluding the hidden item.');
+        $this->assertSame(2, $hiddencount, 'Send-flow opt-in must include the hidden item.');
+    }
+
+    /**
+     * T6: get_grades_send_options() must expose grade items hidden in the
+     * gradebook with "hidden" => true and their REAL grademax / passmark
+     * (50% fallback when Moodle has no explicit pass mark).
+     */
+    public function test_send_options_exposes_hidden_flag(): void {
+        $this->resetAfterTest(true);
+
+        $course = $this->getDataGenerator()->create_course();
+        $ana = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 9.9, 10, true);
+
+        $opts = \block_mwa_dashboard\external::get_grades_send_options($course->id, 0);
+
+        $this->assertCount(1, $opts['activities']);
+        $this->assertTrue($opts['activities'][0]['hidden']);
+        $this->assertEqualsWithDelta(10, $opts['activities'][0]['grademax'], 0.001);
+        $this->assertEqualsWithDelta(5, $opts['activities'][0]['passmark'], 0.001);
+        $this->assertFalse($opts['activities'][0]['hascustompassmark']);
     }
 
     // ---- Plan SS15 / T1 — comment confinement (anti-manipulation) -----------
