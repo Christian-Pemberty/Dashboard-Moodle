@@ -2173,6 +2173,7 @@ $string['gradesmail_passmin'] = 'Minimum approval grade';
 $string['gradesmail_passmin_custom'] = 'Pass mark taken from the activity in Moodle (editable).';
 $string['gradesmail_passmin_fallback'] = 'The activity has no pass mark in Moodle; using 50% of its maximum. Adjust it if needed.';
 $string['gradesmail_passmin_none'] = 'No pass mark is available for this activity; define one to use the quick filters.';
+$string['gradesmail_evalselect_empty'] = 'No graded activity with a visible grade was found in this course. The activities may be hidden in the Gradebook (crossed-out eye icon): unhide them there ("Grading > Display options") and this selector will become available.';
 $string['gradesmail_filter_all'] = 'All';
 $string['gradesmail_filter_passed'] = 'Passed';
 $string['gradesmail_filter_failed'] = 'Failed';

@@ -47,7 +47,7 @@ $gmkeys = [
     'status_error', 'status_notenrolled', 'channel_email', 'channel_moodle', 'nograde',
     'error_generic',
     // Tabs / activity selection / pass mark.
-    'tab_send', 'tab_history', 'evalselect',
+    'tab_send', 'tab_history', 'evalselect', 'evalselect_empty',
     'passmin', 'passmin_custom', 'passmin_fallback', 'passmin_none',
     // Quick filters + search + result column.
     'filter_all', 'filter_passed', 'filter_failed', 'filter_pending',

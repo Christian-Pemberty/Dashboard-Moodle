@@ -551,6 +551,11 @@ define(['core/ajax'], function(Ajax) {
             } else {
                 msg = t('passmin_none');
             }
+        } else if (students.length > 0 && activities.length === 0) {
+            // T5: the course has students but no visible graded activity (e.g.
+            // all grade items hidden in the gradebook). Explain the cause
+            // instead of leaving the select silently disabled.
+            msg = t('evalselect_empty');
         }
         els.passHint.textContent = msg;
     };

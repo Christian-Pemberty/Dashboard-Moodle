@@ -19,16 +19,27 @@
 > Diario de la sesión: **`DIARIO-DESARROLLO-2026-10-27.md`** (raíz del workspace).
 > Antecedente: **`DIARIO-DESARROLLO-2026-10-26.md`** (contexto del 26-oct).
 >
-> ✅ **FASE ACTUAL (27-oct tarde): T4 — Canal de email M365** — **CANAL REPARADO vía B
+> ✅ **FASE ANTERIOR (27-oct tarde): T4 — Canal de email M365** — **CANAL REPARADO vía B
 > (fallback SMTP AUTH en el relay, 250 OK verificado en log `_diag52`)**; pendiente
 > SOLO la confirmación final del usuario (email de prueba en bandeja + 1 envío desde la
 > UI). Vea §T4 abajo (Vía A de raíz sigue pendiente con el admin M365, ya no bloquea).
+>
+> 🔵 **FASE ACTUAL (27-oct tarde-noche): T5 — Curso 4 sin actividad evaluada / sin nota
+> máxima.** Diagnóstico cerrado (NO es bug: los 4 ítems `mod=quiz` del curso 4 están
+> `hidden=1` en la libreta). Mejora UI de estado vacío (mensaje explicativo, 3 lang +
+> JS + build). **Código v2026102701 YA DESPLEGADO en el server** (swap + backup
+> `mwa_dashboard.bak.2026102701` + purge + `upgrade` `++ 2026102701: Éxito`); pendiente:
+> verificación live con `_diag55.sh`, que el docente desoculte los quizzes del curso 4,
+> y push. Vea §T5 abajo y diario §7.
 > **Flujo de trabajo recordado por el usuario:** la verdad de origen está en el server
 > (Moodle **5.0.1** en 192.168.25.4, contenedor `moodle_app`); lo local
 > (`block_mwa_dashboard/`) se mantiene al día para subir al repo
 > `Christian-Pemberty/Dashboard-Moodle` (rama `main`).
 
-> Estado actual: v **2026102601** desplegada (27-oct, confirmada en producción).
+> Estado actual: v **2026102701** desplegada en producción (27-oct tarde: swap OK +
+> `upgrade` OK `++ 2026102701: Éxito`; backup `mwa_dashboard.bak.2026102701` con
+> v2026102601 conservado). **Verificación live pendiente** → script `_diag55.sh`
+> (version+WS, restart, smoke HTTP, markers).
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
 > Contrato WYSIWYG existente: preview y envío usan la misma fuente de verdad —
 > `\block_mwa_dashboard\external::build_grades_mail()` (external.php:815) —
@@ -356,7 +367,88 @@ Agregar al relay `smtp-unicla` (`/app/app.py`, 178 líneas) un **segundo backend
       commit `636739c`; el `CLIENT_SECRET` de Azure NO se versionó: **GitHub Push
       Protection lo bloqueó** y las copias del repo lo llevan como placeholder).
 
-## Riesgos / notas
+## T5 — Curso 4: sin "Actividad evaluada" ni nota máxima (ABIERTA, 27-oct tarde-noche)
+
+> **Síntoma (usuario, 27-oct):** en `https://medicionra.uniclaretiana.edu.co/blocks/
+> mwa_dashboard/enviarnotas.php?course=4` no aparece el selector **"Actividad
+> evaluada"** ni el campo de **nota mínima** (en curso 2 sí funcionan).
+
+### 5.1 Diagnóstico (evidencia 27-oct, runner `_diag54.sh`, PHP CLI en `moodle_app`)
+
+| Dato | Curso 2 (OK) | Curso 4 (afectado) |
+|---|---|---|
+| Estudiantes (rol `student`) | 7 | 12 |
+| `grade_items` mod / visibles | 1 / **1** | 4 / **0** |
+| Ítems quiz | gi#2 `hidden=0` max=10 pass=6 ("Prueba funcional – Momento 1 RA") | gi#9/gi#10/gi#12 **`hidden=1`** (max 5/5/10, sin pass): Momento 1, Momento 2, Momento 3 — más gi#11 del quiz inst=7 cuyo cm#33 está **en borrado** (Momento 2 duplicado) |
+| `excludedcmids` (ajuste del bloque, curso) | vacío | vacío |
+| `api::get_grades()` | 8 filas, meta `activity_names` **SÍ** (acts=1) | 12 filas, meta **NO** → fallback `grade_roster_rows` |
+
+**CAUSA RAÍZ: NO es bug del plugin.** Los 4 ítems de quiz del curso 4 están
+marcados `hidden=1` en la libreta de calificaciones (= el docente no quiere
+publicarlas todavía, comportamiento de Moodle: los ítems ocultos no se muestran
+ni se envían a estudiantes). La cadena `api::get_grades()` filtra ítems ocultos
+por diseño → quedan 0 → entra el **fallback de roster** previsto para este caso
+(los 12 estudiantes SÍ aparecen; su total sale del ítem `itemtype='course'` max 25)
+pero **sin** la fila meta `activity_names` → `get_grades_send_options` devuelve
+`['activities' => []]` → el selector y el campo de nota mínima se muestran
+**deshabilitados y en silencio** (faltaba explicación → mejorada en §5.3).
+
+### 5.2 Acción operativa (docente, inmediata, no requiere código)
+En **curso 4 → Calificaciones**: desocultar los ítems de los quizzes (ícono de ojo
+tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=0`:
+- el selector de actividad + campo de nota mínima se habilitan **exactamente como
+  en curso 2**;
+- opcional: definir "Nota de aprobación" del ítem para tener el umbral exacto
+  (si no la hay, el plugin usa por defecto el 50% de la máxima, tal como lo indica
+  el hint `passmin_fallback`).
+
+### 5.3 Mejora UX implementada (código, v2026102701 — 27-oct)
+- Cadena nueva **`gradesmail_evalselect_empty`** (en/es/pt_br) + añadida a `$gmkeys`
+  de `enviarnotas.php`.
+- `amd/src/enviarnotas.js` → `refreshPassmarkHint()`: si no hay actividad
+  seleccionable y el curso SÍ tiene estudiantes → el hint muestra la causa
+  (actividades ocultas en la libreta) y cómo remediarla. El fallback de roster
+  **se mantiene** (ítems ocultos no se publican/envían: la decisión de la libreta
+  manda).
+- `amd/build/enviarnotas.min.js` **regenerado** con terser 5.51.2 (`--comments
+  jsdoc`): `node --check` OK; markers presentes: `mwaGmPreviewEdit`, `histClear`,
+  `data-gm-editable`, `chip-student`, `mwaGmPreviewChips`, `MWA_GRADEMAIL_STR`,
+  `delete_grades_mail_record`, `clear_grades_mail_history`, `evalselect_empty`.
+  Backup previo: `enviarnotas.min.js.bak.20261027` (raíz del workspace).
+- `version.php`: 2026102601 → **2026102701** (bump de convención + cache-buster
+  del AMD; `upgrade.php` actualizará `config_plugins`).
+- `php -l` local OK en `version.php`, `enviarnotas.php`, los 3 `lang/*.php`.
+
+### Aceptación T5
+- [x] Diagnóstico con evidencia curso 2 vs curso 4 (`_diag54.sh`, 27-oct) → causa
+      raíz documentada (§5.1).
+- [x] Mejora UX estado vacío: 3 lang + `enviarnotas.php` + JS + build min + bump
+      (27-oct).
+- [x] **Deploy v2026102701 (servidor, 27-oct tarde):** staging `_stage2701` (108
+      archivos) → `docker cp` ruta nueva → `_inner6`: PRE_OK + BACKUP_OK
+      (`mwa_dashboard.bak.2026102701` = v2026102601) + SWAP_OK + purge +
+      `upgrade.php --non-interactive` → **`++ 2026102701: Éxito`**.
+      ⚠️ Corte post-upgrade: mi one-liner de verificación usó `get_field(config_plugins,
+      'version')` — **el version es FILA `(plugin,name='version',value)`, no columna**
+      → PHP fatal → H4/H5/H6 (restart/smoke/markers) NO corrieron. Código desplegado
+      igualmente; pendiente verificación con **`_diag55.sh`** (ya en el workspace).
+- [ ] **Verificación live** (`_diag55.sh`): version+WS con query correcta, `docker
+      restart moodle_app`, smoke HTTP (200 / `enviarnotas` 303), markers en live
+      (`evalselect_empty`, `mwaGmPreviewEdit`, `histClear`).
+- [ ] **Usuario:** confirmación del hint `evalselect_empty` visible en curso 4
+      (visible desde el deploy hasta que se desoculten los ítems).
+- [ ] **Docente/usuario:** desocultar los quizzes del curso 4 en Calificaciones →
+      selector de actividad + nota mínima operativos (paradigma curso 2).
+- [ ] Push a `github:Christian-Pemberty/Dashboard-Moodle` (rama `main`).
+
+---
+
+- **Estado de datos curso 4 (27-oct, T5):** los 4 ítems `mod=quiz` están ocultos
+  (`hidden=1`) en la libreta → el plugin (correctamente) no los publica ni ofrece
+  como actividad del envío; hasta que el docente los desoculte, el selector aparece
+  deshabilitado **con el hint explicativo** `evalselect_empty` (v2026102701).
+  Si se repite en otros cursos: misma receta — desocultar ítems en Calificaciones.
+  (Ver §T5 para evidencia de la comparación curso 2 vs 4.)
 
 - ⚠️ **Dependencia externa del canal de correo (27-oct):** el envío real pasa por el relay
   `smtp-unicla` (contenedor Python en el host, puerto 1026) → Microsoft Graph

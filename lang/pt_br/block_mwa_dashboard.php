@@ -2177,6 +2177,7 @@ $string['gradesmail_passmin'] = 'Nota mínima de aprovação';
 $string['gradesmail_passmin_custom'] = 'Nota de aprovação vinda da atividade no Moodle (editável).';
 $string['gradesmail_passmin_fallback'] = 'A atividade não tem nota de aprovação no Moodle; usamos 50% do seu máximo. Ajuste, se necessário.';
 $string['gradesmail_passmin_none'] = 'Esta atividade não tem nota de aprovação disponível; defina uma para usar os filtros rápidos.';
+$string['gradesmail_evalselect_empty'] = 'Nenhuma atividade avaliável com nota visível foi encontrada neste curso. As atividades podem estar ocultas no diário de notas (ícone de olho riscado): exibam-no lá («Avaliação ▸ Opções de exibição») e este seletor voltará a ficar disponível.';
 $string['gradesmail_filter_all'] = 'Todos';
 $string['gradesmail_filter_passed'] = 'Aprovados';
 $string['gradesmail_filter_failed'] = 'Reprovados';
