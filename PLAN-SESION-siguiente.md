@@ -1,5 +1,22 @@
 # PLAN — Sesión siguiente: block_mwa_dashboard (envío de notas)
 
+> ✅ **ESTADO 27-oct-2026 (DESPLEGUE VERIFICADO):** despliegue N.º2
+> (`_depl27` + `_inner5`) **COMPLETADO y verificado en vivo** (verificación del
+> 27-oct, runner `_diag31.sh`):
+> - disco: `version.php = 2026102601`, markers `mwaGmPreviewEdit` / `chip-student` /
+>   `histClear` presentes en `amd/build/enviarnotas.min.js`, anclas
+>   `data-gm-editable` ×2 en `classes/external.php`, 2 WS nuevos en `db/services.php`,
+>   **0 directorios `stage*` anidados**.
+> - backup vivo: `mwa_dashboard.bak.20261027` (con v2026102301) conservado.
+> - DB: `config_plugins block_mwa_dashboard.version = 2026102601`; **20 WS**
+>   `block_mwa_dashboard_*`, incluidos `delete_grades_mail_record` y
+>   `clear_grades_mail_history` (REGISTERED).
+> - HTTP: sitio `200`; `enviarnotas.php?course=2` → `303` a login ✔.
+> Pendiente: **verificación funcional en navegador** (cuenta docente; usuario) y
+> **push a GitHub** (en curso).
+> Diario de la sesión: **`DIARIO-DESARROLLO-2026-10-27.md`** (raíz del workspace).
+> Antecedente: **`DIARIO-DESARROLLO-2026-10-26.md`** (contexto del 26-oct).
+
 > Estado actual: v **2026102301** desplegada (23-oct, confirmada en producción).
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
 > Contrato WYSIWYG existente: preview y envío usan la misma fuente de verdad —
@@ -215,6 +232,24 @@ imitando el patrón existente `delete_intervention()` (línea 1601):
    5. Verificar `MWA_GRADEMAIL_STR` ≥ 2 en `enviarnotas.php` y `data-gm-editable` presente.
 5. **GitHub:** clonar `github:Christian-Pemberty/Dashboard-Moodle`, reemplazar raíz por el
    plugin (como se hizo en 23-oct), commit + push a `main`.
+
+## Cierre 27-oct-2026 — ejecución y verificación
+
+1. **Versión:** la subida efectuada fue **`2026102601`** (no `2026102302` como decía §Cross-cutting;
+   más alto y correcto). `upgrade.php --non-interactive` corrió, **bump OK** y los 2 WS de T3b
+   quedaron registrados (verificado en `mdl_external_functions`: 20 WS totales).
+2. **Markdown/AMD:** min regenerado con los 3 markers T1/T2/T3 (verificado en live).
+3. **Tests:** 13 tests PHPUnit en `tests/send_grades_mail_test.php` (4 nuevos: anti-manipulación,
+   estilos inline, delete owner-only/refusa no-Grades, clear scoped/admin).
+4. **Docs:** `README.md` (sección 4.3.1), `ESTRUCTURA.md` (WS +6, §15 módulo "Enviar notas" — 2026-10-27),
+   y este plan actualizado.
+5. **GitHub:** commit de código ya local (`105c5d5`); commit de plan+docs y push a `main` (27-oct).
+
+### Pendiente (único)
+- [ ] **Verificación funcional en el sitio con cuenta docente** (lo hace el usuario):
+      T1 Editar en preview · T3a chips por estudiante · T3b borrar fila + limpiar historial ·
+      envío de prueba (Gmail/Outlook web) para confirmar T2 (tabla con bordes/colores).
+      Criterios: los checkboxes de aceptación T1/T2/T3 marcados arriba.
 
 ## Riesgos / notas
 - **T1 y T2 comparten `build_grades_mail()`:** hacer T1 → T2 en ese orden; T2 solo

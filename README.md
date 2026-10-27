@@ -175,6 +175,19 @@ Version 4.3 delivers the current unified dashboard experience for course monitor
 - Suspended Class List and Intervention shells use Moodle Mustache templates.
 - User-facing strings use Moodle's language system, and production AMD files are compiled from matching source modules.
 
+## Version 4.3.1 — Grades email module (26-oct-2026)
+
+New **"Send grades"** module (plugin version `2026102601`) for sending students' grades by email + Moodle message, with preview and full audit.
+
+- **Access:** "Send grades" button in the dashboard block (teachers / managers) → own page `enviarnotas.php`.
+- **Selection and preview:** multiple students (select all/deselect all), quick filters (approved / failed / pending), name search, activity selector with pass mark, and live preview of the exact email per student.
+- **Editable comment:** an **Edit** button in the preview card makes only the teacher's comment editable, in place, while name, date, grades table and institutional footer stay read-only (both by design and on the server; the only free POST variable is `comment`).
+- **Email-safe HTML:** the email is sent multipart (plain + HTML) with fully inline styles — bordered table, shaded header, coloured grades, separated footer — stable in Gmail and Outlook web.
+- **Send history:** tab with paginated log, status filter, per-row delete, and "Clear history" with reinforced confirmation. Deletion is hard-restricted to records created by the grades module; pedagogical interventions are never touched.
+- **Security and audit:** capability checks (`view` + `manageinterventions`), one email + one Moodle message per student (no group mail), per-student outcome (a failure never interrupts the batch), and one audit row per student in `block_mwa_dashboard_messages` (`reason='Grades'`).
+- **Languages:** user interface and email body in English, Spanish, and Brazilian Portuguese (email is rendered in the student's language).
+- **Tests:** `tests/send_grades_mail_test.php` (13 tests) covers capabilities, mixed batches, no grade leakage between students, tamper-proof comment, inline email styles, and history delete/clear rules.
+
 ## Author
 
 **Bruno Porto**  

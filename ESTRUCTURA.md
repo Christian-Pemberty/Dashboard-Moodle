@@ -7,7 +7,7 @@
 > | Tipo de plugin | **Block** |
 > | Componente | `block_mwa_dashboard` |
 > | Directorio de instalación | `blocks/mwa_dashboard` |
-> | Versión actual | `2026082689` (release **4.3**) |
+> | Versión actual | `2026102601` (release **4.3.1** — Grades email) |
 > | Requisito mínimo | Moodle 4.1+ (`$plugin->requires = 2022112800`), PHP 7.4+ |
 > | Autor | Bruno Porto (IFES/CEFOR) |
 > | Licencia | GNU GPL v3 (código libre, modificable) |
@@ -202,6 +202,12 @@ moodle-block_mwa_dashboard/
 | `block_mwa_dashboard_set_activity_tracking` | `external::set_activity_tracking` | **write** | Incluir/excluir actividad del rastreo |
 | `block_mwa_dashboard_get_hidden_activities` | `external::get_hidden_activities` | read | Actividades ocultas (visual) del docente |
 | `block_mwa_dashboard_set_activity_hidden` | `external::set_activity_hidden` | **write** | Mostrar/ocultar actividad |
+| `block_mwa_dashboard_get_grades_mail_preview` | `external::get_grades_mail_preview` | read | Preview exacta del correo de notas (subject, html, plain, studentname) |
+| `block_mwa_dashboard_send_grades_mail` | `external::send_grades_mail` | **write** | Enviar notas a 1+ estudiantes (email + mensaje Moodle + auditoría) |
+| `block_mwa_dashboard_get_grades_send_options` | `external::get_grades_send_options` | read | Actividades con grademax/passmark para select, filtros y clasificación |
+| `block_mwa_dashboard_get_grades_mail_history` | `external::get_grades_mail_history` | read | Historial de envíos de notas (auditoría) con límite/desplazamiento y filtro de estado |
+| `block_mwa_dashboard_delete_grades_mail_record` | `external::delete_grades_mail_record` | **write** | Borrar 1 registro de envío de notas (solo `intervention_reason='Grades'`) |
+| `block_mwa_dashboard_clear_grades_mail_history` | `external::clear_grades_mail_history` | **write** | Limpiar el historial de envíos de un curso(+grupo) (solo 'Grades') |
 
 > **Para hacer una función nueva:** `external::mi_funcion()` + `_parameters()` + `_returns()` en `classes/external.php`, registrarla en `db/services.php`, y llamarla desde `amd/src/*.js` con `require(['core/webservice'], ...)`.
 
@@ -294,6 +300,7 @@ El plugin se registra como **provider de bloques de mensajes** (`db/messages.php
 | `classlist.css` | Lista de estudiantes |
 | `studentprofile.css` | Perfil individual |
 | `grades.css` | Calificaciones |
+| `gradesmail.css` | Módulo "Enviar notas" (`enviarnotas.php`) |
 | `activities.css` | Actividades/recursos |
 | `interventions.css` | Intervenciones |
 | `heatmap.css` | Mapa de calor de acceso |
@@ -326,6 +333,7 @@ Todos los textos visibles van en `lang/<idioma>/block_mwa_dashboard.php` como `$
 | Desactivar/limpiar datos de un curso | `track.php` / `configaikey.php` / SQL directo en `{block_mwa_dashboard_log}` |
 | Revisar la migración | `db/upgrade.php` (función `xmldb_block_mwa_dashboard_upgrade`) |
 | Probar en tests | `tests/*.php` (PHPUnit) |
+| Modificar "Enviar notas" | `enviarnotas.php` + `amd/src/enviarnotas.js` + `classes/external.php` (sección grades mail) + `styles/gradesmail.css` + `lang/*` |
 
 ---
 
@@ -338,3 +346,35 @@ Todos los textos visibles van en `lang/<idioma>/block_mwa_dashboard.php` como `$
 - [ ] `php -l` pasa sobre todos los archivos PHP modificados (sintaxis limpia).
 - [ ] Capabilities nuevas (si las hay) están en `db/access.php` y asignadas por upgrade.
 - [ ] Tests del paquete `tests/` siguen pasando: `vendor/bin/phpunit --filter block_mwa_dashboard` (si hay vendor).
+
+---
+
+## 15. Módulo "Enviar notas por correo" (v4.3.1, desde 2026102601)
+
+Módulo de página propia (no dentro del monolito `dashboardapp.js`) que permite al docente
+seleccionar estudiantes, previsualizar y enviar sus notas por correo + mensaje de Moodle,
+con historial y auditoría.
+
+| Archivo | Rol |
+| --- | --- |
+| `enviarnotas.php` | Página protegida (`require_login` + caps `view` + `manageinterventions`); define `$gmkeys[]` (claves que llegan al JS vía `js_call_amd`) |
+| `block_mwa_dashboard.php` | Botón "Enviar notas" en el bloque (solo con `manageinterventions`, curso id > 1) |
+| `amd/src/enviarnotas.js` | UI completa: tabs Enviar/Historial, select de actividad, passmark, filtros rápida, búsqueda por nombre, chips de estudiantes, edición del comentario en el preview (T1), envío, resultados, borrar/limpiar historial (T3b) |
+| `amd/build/enviarnotas.min.js` | Minificado (a mano, sin Grunt en este repo — verificación de markers antes de cada deploy) |
+| `styles/gradesmail.css` | Estilos `mwa-gm-*` del módulo |
+| `classes/external.php` | Sección "grades mail": `build_grades_mail()` (fuente común de preview y envío, HTML inline-safe) + los 8 WS `*_grades*` de la tabla §5 |
+| `tests/send_grades_mail_test.php` | 13 tests: capabilities, lotes, anti-fuga entre estudiantes, anti-manipulación del comentario, estilos inline, delete/clear de historial |
+| `lang/en|es|pt_br` | Strings `gradesmail_*` (UI + cuerpo del correo) |
+
+**Reglas no negociables del diseño:**
+
+- 1 correo + 1 mensaje Moodle por estudiante (nunca correo de grupo).
+- Solo ítems `hidden=0`; datos de `api::get_grades()` como fuente única.
+- **WYSIWYG**: preview y envío construyen el mismo HTML con `build_grades_mail()`; el
+  ancla `data-gm-editable` permite que solo el párrafo de comentario sea editable en vivo
+  y la única variable libre del POST sigue siendo `comment`.
+- Correo en multipart (plain+html) con estilos **inline** (tabla con bordes, cabecera de
+  fondo, colores pasadas/pendientes): seguro en Gmail/Outlook web.
+- Auditoría: 1 fila en `block_mwa_dashboard_messages` por envío, `intervention_reason='Grades'`;
+  el borrado (`delete_grades_mail_record` / `clear_grades_mail_history`) **nunca** toca
+  intervenciones pedagógicas (verificación dura `intervention_reason='Grades'`).
