@@ -18,6 +18,15 @@
 > en `main`, rama en sincronía con `origin/main`).
 > Diario de la sesión: **`DIARIO-DESARROLLO-2026-10-27.md`** (raíz del workspace).
 > Antecedente: **`DIARIO-DESARROLLO-2026-10-26.md`** (contexto del 26-oct).
+>
+> ✅ **FASE ACTUAL (27-oct tarde): T4 — Canal de email M365** — **CANAL REPARADO vía B
+> (fallback SMTP AUTH en el relay, 250 OK verificado en log `_diag52`)**; pendiente
+> SOLO la confirmación final del usuario (email de prueba en bandeja + 1 envío desde la
+> UI). Vea §T4 abajo (Vía A de raíz sigue pendiente con el admin M365, ya no bloquea).
+> **Flujo de trabajo recordado por el usuario:** la verdad de origen está en el server
+> (Moodle **5.0.1** en 192.168.25.4, contenedor `moodle_app`); lo local
+> (`block_mwa_dashboard/`) se mantiene al día para subir al repo
+> `Christian-Pemberty/Dashboard-Moodle` (rama `main`).
 
 > Estado actual: v **2026102601** desplegada (27-oct, confirmada en producción).
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
@@ -253,15 +262,112 @@ imitando el patrón existente `delete_intervention()` (línea 1601):
       historial ✔ · envío real (Gmail/Outlook web) T2: tabla con bordes, cabecera con
       fondo, nota coloreada ✔. Criterios: aceptación T1/T2/T3 marcadas arriba.
 
+## T4 — Canal de email M365: diagnóstico y remediación (ABIERTA, 27-oct tarde)
+
+> El plugin quedó completo y verificado (T1–T3). Sin embargo el **correo real no llega**
+> a los destinatarios. Diagnóstico completo (no es bug del plugin): falla el canal
+> servidor → Microsoft 365.
+
+### 4.1 Evidencias (verificado en vivo, `_diag42`–`_diag45`, 27-oct)
+
+1. **Moodle → relay `smtp-unicla`: OK** (SMTP handshake, DATA 250).
+2. **Relay → Microsoft Graph: RECHAZADO en TODOS los senders** (probe de hoy):
+   - `soporte.mym@uniclaretiana.edu.co` → `sendMail` **404 `MailboxNotEnabledForRESTAPI`**
+     → esa buzonería está inactiva / soft-delete / on-prem **hoy** (antes sí enviaba).
+   - `soporte.cursosvirtuales@...` → **403 `ErrorAccessDenied`**.
+   - `desarrollador.mediosymediaciones@...` → **403 `ErrorAccessDenied`**.
+   - `GET /users/{sender}` → **403 `Authorization_RequestDenied`** en los 3 → la app
+     **tampoco tiene** `User.Read`. El token AAD se obtiene bien (secret OK, claims de la
+     app "Dspace" sin scope = permisos de app, no de usuario).
+3. **Línea de tiempo (log del relay, con timestamps):**
+   - **Último envío EXITOSO: 2026-10-26 14:04 UTC** (remitente `soporte.cursosvirtuales@`
+     — ya entonces `soporte.mym` estaba fallando → la buzonería cayó ~26-oct).
+   - **Primer FALLO: 2026-10-27 13:18 UTC** (= coincida con la queja del usuario:
+     auditoría `status=error` 27-oct 08:18:50 hora local -5 = 13:18 UTC ✓).
+   - Conclusión: **entre el 26-oct y el 27-oct cambió algo en M365/Azure AD** al lado de
+     la institución (revocación de consent de la app "Dspace" o eliminación de la app
+     registration / cambio de política). Nada en nuestro código cambió.
+4. **Auditoría BD** (`mdl_block_mwa_dashboard_messages`): filas `status=error` de la queja
+   (el mensaje Moodle sí salió al relay; el envío final falló).
+
+### 4.2 CAUSA RAÍZ (lado Microsoft 365, fuera del plugin y del server)
+
+Dos defectos independientes, ambos en el tenant M365 de la institución:
+
+1. **App registration "Dspace"** (`CLIENT_ID=9f47a629-…`, tenant `498edaab-…`):
+   **perdió el consentimiento** de los permisos de aplicación `Mail.Send` (+ `User.Read`).
+   → 403 `ErrorAccessDenied` en `sendMail` para TODOS los remitentes.
+2. **Mailbox `soporte.mym@uniclaretiana.edu.co`**: deshabilitado / soft-deleted /
+   migrado on-prem → 404 `MailboxNotEnabledForRESTAPI` (era el primer sender de la cadena).
+
+### 4.3 Acciones pendientes
+
+**Vía A — remediar de raíz (admin M365 / Azure AD, mensaje para entregar al admin):**
+
+> "Se requiere en el tenant M365:
+> (1) En Azure AD → Application registrations → **"Dspace"** (`client_id 9f47a629-be68-46e2-8e59-8f0b717cd79b`):
+> verificar/crear permisos de aplicación **Mail.Send** y **User.Read** y conceder
+> **Admin consent** (Consent to application... / Grant admin consent → Microsoft Graph);
+> (2) En EXO: reactivar/re-crear el mailbox **soporte.mym@uniclaretiana.edu.co**
+> (hoy responde `MailboxNotEnabledForRESTAPI`) o, en su defecto, indicar el mailbox
+> correcto para remitente de soporte;
+> (3) Confirmar que los mailboxes de la cadena de fallback
+> (**soporte.cursosvirtuales@**, **desarrollador.mediosymediaciones@**) existen y no
+> quedaron sin licencia EXO."
+
+Tras aplicar: reprobe (script `_diag42` §D) y test de envío real desde `enviarnotas`.
+
+**Vía B — fallback SMTP AUTH (si el admin tarda / no puede reconceder):**
+Agregar al relay `smtp-unicla` (`/app/app.py`, 178 líneas) un **segundo backend** de envío:
+- `smtplib` a `smtp.office365.com:587` (STARTTLS, `LOGIN/PLAIN` con cuenta M365 +
+  **contraseña de app**) como último eslabón cuando Graph falle.
+- **REQUIERE:** cuenta M365 con SMTP AUTH habilitado y su app password.
+- **DECISIÓN 27-oct (usuario):** remitente Vía B = `soporte.cursosvirtuales@uniclaretiana.edu.co`.
+- Riesgo: el tenant puede bloquear SMTP AUTH globalmente (política "Modern only") →
+  probar ANTES de reimplementar. Verificado 27-oct: `smtp.office365.com:587` **respone**
+  desde el relay (`BN1PR12CA0016.outlook.office365.com`, `STARTTLS` ok, EHLO 250).
+- **ESTADO: IMPLEMENTADO EN EL RELAY (27-oct, `_depl47.sh`):** nuevo bloque
+  `SMTP_FALLBACK_*` + `smtp_fallback_send()` al final de `handle_DATA()` (último
+  eslabón, solo si hay credenciales — sin credenciales el comportamiento es idéntico
+  al anterior, verificado por smoke). Credenciales por **env** (`SMTP_FALLBACK_USER`/
+  `SMTP_FALLBACK_PASS`) o archivo `/app/.smtp_creds` (línea 1 usuario, línea 2 app
+  password; `chmod 600`). Backup previo: `/app/app.py.bak.20261027`.
+  **HECHO 27-oct:** app password cargada en `/app/.smtp_creds` (600, 2 líneas),
+  `docker restart smtp-unicla`, **SMOKE REAL EXITOSO** (log `_diag52`): cadena Graph
+  cae (404/403) → `Intentando SMTP AUTH fallback como soporte.cursosvirtuales@` →
+  **`Correo enviado correctamente POR SMTP FALLBACK` → 250 OK**.
+  **PENDIENTE FINAL:** usuario confirma (a) el email de prueba en su bandeja
+  (`desarrollador.mediosymediaciones@`) y (b) 1 envío real desde la UI `enviarnotas`
+  (verifica auditoría `status=ok` + entrega Gmail/Outlook).
+- Nota: hoy el relay usa `saveToSentItems=True` vía Graph; con SMTP puro no hay
+  "Sent Items" (aceptable para notificaciones a estudiantes).
+
+### 4.4 Verificación al cerrar T4
+- [x] Canal de envío vivo: **relay → Office 365** devuelve **250** vía fallback SMTP
+      (27-oct, `_diag52`). Vía Graph aún 404/403 (pendiente Vía A, no bloquea ya).
+- [ ] Usuario confirma: email de prueba `[MWA] Canal reparado - prueba V2 SMTP fallback`
+      llega a `desarrollador.mediosymediaciones@` (remitente `soporte.cursosvirtuales@`).
+- [ ] Envío real vía UI `enviarnotas` (cuenta docente): destinatario de prueba recibe el
+      correo en < 1 min (Gmail/Outlook web), con tabla bordes/cabecera/nota coloreada (T2).
+- [ ] Auditoría BD: nueva fila `status=ok` (no `error`), `moodle_msgid` presente.
+- [x] Plan y diario actualizados; cambio en el relay con backup previo
+      (`/app/app.py.bak.20261027`), **el relay NO está en el repo `Dashboard-Moodle`**.
+
 ## Riesgos / notas
 
 - ⚠️ **Dependencia externa del canal de correo (27-oct):** el envío real pasa por el relay
   `smtp-unicla` (contenedor Python en el host, puerto 1026) → Microsoft Graph
-  (`app registration "Dspace"`, `Mail.Send` client_credentials). **Ese canal está roto hoy
-  (403 `ErrorAccessDenied` / 404 `MailboxNotEnabledForRESTAPI`)** → auditoría `status=error`
-  y "no me deja enviar". **No es bug del plugin**; requiere reconceder la app en Azure AD /
-  M365 (detalle completo en `DIARIO-DESARROLLO-2026-10-27.md` §4). Hasta entonces,
-  T2 solo es verificable vía preview (WYSIWYG OK) y mensaje Moodle; el correo real no sale.
+  (`app registration "Dspace"`, `Mail.Send` client_credentials). **Ese canal está roto
+  (403 `ErrorAccessDenied` en los 3 senders + 404 `MailboxNotEnabledForRESTAPI` en
+  `soporte.mym`)** → auditoría `status=error` y "no me deja enviar". **No es bug del
+  plugin**. Última ventana funcional: **2026-10-26 14:04 UTC**; primer fallo
+  **2026-10-27 13:18 UTC** (coincide con la queja). **RESUELTO 27-oct vía B** (fallback
+  SMTP AUTH en el relay → 250 OK; ver §T4). La Vía A (reconceder la app en Azure AD) sigue
+  pendiente con el admin M365: mientras no se haga, todo el envío real corre por SMTP
+  como `soporte.cursosvirtuales@` (cuyas credenciales viven en `/app/.smtp_creds`, 600).
+  ⚠️ **Cambio del remitente visto por los recipientes: ahora es
+  `soporte.cursosvirtuales@`** (antes era a veces `soporte.mym@`). Verificación completa:
+  `DIARIO-DESARROLLO-2026-10-27.md` §6.
 - **T1 y T2 comparten `build_grades_mail()`:** hacer T1 → T2 en ese orden; T2 solo
   reestiliza, T1 solo ancla. Si se hace T2 primero, T1 sigue (el ancla se inyecta igual).
 - El ancla `data-gm-editable` viaja en el HTML del correo recibido: inofensivo (los
