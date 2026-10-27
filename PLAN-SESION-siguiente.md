@@ -12,12 +12,14 @@
 >   `block_mwa_dashboard_*`, incluidos `delete_grades_mail_record` y
 >   `clear_grades_mail_history` (REGISTERED).
 > - HTTP: sitio `200`; `enviarnotas.php?course=2` → `303` a login ✔.
-> Pendiente: **verificación funcional en navegador** (cuenta docente; usuario) y
-> **push a GitHub** (en curso).
+> ✅ TODO CERRADO 27-oct-2026: verificación funcional OK en el sitio (usuario: T1 Editar
+> preview, T2 envío real Gmail/Outlook con tabla bordes/cabecera/fondo/nota coloreada,
+> T3a chips sin re-query, T3b borrar fila + limpiar historial) y push a GitHub (2 commits
+> en `main`, rama en sincronía con `origin/main`).
 > Diario de la sesión: **`DIARIO-DESARROLLO-2026-10-27.md`** (raíz del workspace).
 > Antecedente: **`DIARIO-DESARROLLO-2026-10-26.md`** (contexto del 26-oct).
 
-> Estado actual: v **2026102301** desplegada (23-oct, confirmada en producción).
+> Estado actual: v **2026102601** desplegada (27-oct, confirmada en producción).
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
 > Contrato WYSIWYG existente: preview y envío usan la misma fuente de verdad —
 > `\block_mwa_dashboard\external::build_grades_mail()` (external.php:815) —
@@ -93,11 +95,11 @@ Archivo: `amd/src/enviarnotas.js`.
 - `gradesmail_preview_edit` ("Editar" / "Edit" / "Editar"),
   `gradesmail_preview_done` ("Listo" / "Done" / "Concluído") — ambas a `$gmkeys` de `enviarnotas.php` (lista, línea 43).
 
-### Aceptación T1
-- [ ] Botón Editar aparece solo en la tarjeta de preview; alterna Editar ↔ Listo.
-- [ ] Se edita únicamente el párrafo de comentario; nombre/fecha/tabla/pie no son editables ni reciben el texto.
-- [ ] El texto editado llega en el POST como `comment` y el correo recibido lo contiene dentro de la sección "mensaje del docente".
-- [ ] Test anti-manipulación verde; lint verde; preview ↔ envío WYSIWYG intacto.
+### Aceptación T1 — ✅ VERIFICADO EN VIVO (user confirm, 27-oct-2026)
+- [x] Botón Editar aparece solo en la tarjeta de preview; alterna Editar ↔ Listo.
+- [x] Se edita únicamente el párrafo de comentario; nombre/fecha/tabla/pie no son editables ni reciben el texto.
+- [x] El texto editado llega en el POST como `comment` y el correo recibido lo contiene dentro de la sección "mensaje del docente".
+- [x] Test anti-manipulación verde; lint verde; preview ↔ envío WYSIWYG intacto.
 
 ---
 
@@ -138,11 +140,11 @@ Reconstruir `$bodyhtml` manteniendo **las mismas cadenas** lang y el mismo ancla
   (la tabla pasará a verse igual que en el correo). Revisar `.mwa-gm-mail` en
   `styles/gradesmail.css` para no forzar paddings que distorsionen.
 
-### Aceptación T2
-- [ ] Correo real en Gmail y Outlook web: tabla con bordes, cabecera con fondo, nota colorea,
+### Aceptación T2 — ✅ VERIFICADO EN VIVO (user confirm, 27-oct-2026: envío real Gmail/Outlook web)
+- [x] Correo real en Gmail y Outlook web: tabla con bordes, cabecera con fondo, nota colorea,
       pie separado — sin bloques de texto en blanco.
-- [ ] `email_to_user` mantiene `(plain, html)` en ese orden (verificar llamada 1088 en el diff).
-- [ ] Preview in-app == cuerpo del correo (WYSIWYG). Tests de preview siguen verdes (+1 test
+- [x] `email_to_user` mantiene `(plain, html)` en ese orden (verificar llamada 1088 en el diff).
+- [x] Preview in-app == cuerpo del correo (WYSIWYG). Tests de preview siguen verdes (+1 test
       que aserte la presencia de `border:` inline en el HTML de la tabla).
 
 ---
@@ -203,13 +205,13 @@ imitando el patrón existente `delete_intervention()` (línea 1601):
 - Cadenas (en/es/pt_br) + `$gmkeys` de `enviarnotas.php`:
   `hist_del_title`, `hist_del_body`, `hist_del_row`, `hist_clear`, `hist_clear_title`, `hist_clear_body`, `hist_clear_done`.
 
-### Aceptación T3
-- [ ] Seleccionar 3 estudiantes → 3 chips con su nombre; clic para alternar preview sin re-query
+### Aceptación T3 — ✅ VERIFICADO EN VIVO (user confirm, 27-oct-2026)
+- [x] Seleccionar 3 estudiantes → 3 chips con su nombre; clic para alternar preview sin re-query
       (verificar con devtools/Network que una llamada por estudiante máximo).
-- [ ] Borrar 1 fila del historial → desaparece de la tabla Y de la BD (reabrir Historial → no está).
-- [ ] "Limpiar historial" → confirmación → tabla vacía + `hist_empty` visible + 0 filas en BD
+- [x] Borrar 1 fila del historial → desaparece de la tabla Y de la BD (reabrir Historial → no está).
+- [x] "Limpiar historial" → confirmación → tabla vacía + `hist_empty` visible + 0 filas en BD
       (consulta directa) y las intervenciones pedagógicas de `block_mwa_dashboard` intactas.
-- [ ] Test PHPUnit nuevo: `delete_grades_mail_record` (propio/ajenos/no-Grades/admin) y
+- [x] Test PHPUnit nuevo: `delete_grades_mail_record` (propio/ajenos/no-Grades/admin) y
       `clear_grades_mail_history` (conteo borrado, capabilities) — mismo estilo
       `tests/send_grades_mail_test.php` (advanced_testcase, `enrol_user_in_course()`).
 
@@ -245,11 +247,11 @@ imitando el patrón existente `delete_intervention()` (línea 1601):
    y este plan actualizado.
 5. **GitHub:** commit de código ya local (`105c5d5`); commit de plan+docs y push a `main` (27-oct).
 
-### Pendiente (único)
-- [ ] **Verificación funcional en el sitio con cuenta docente** (lo hace el usuario):
-      T1 Editar en preview · T3a chips por estudiante · T3b borrar fila + limpiar historial ·
-      envío de prueba (Gmail/Outlook web) para confirmar T2 (tabla con bordes/colores).
-      Criterios: los checkboxes de aceptación T1/T2/T3 marcados arriba.
+### Pendiente (único) — ✅ RESUELTO 27-oct-2026
+- [x] **Verificación funcional en el sitio con cuenta docente** ( usuario, 27-oct):
+      T1 Editar en preview ✔ · T3a chips por estudiante ✔ · T3b borrar fila + limpiar
+      historial ✔ · envío real (Gmail/Outlook web) T2: tabla con bordes, cabecera con
+      fondo, nota coloreada ✔. Criterios: aceptación T1/T2/T3 marcadas arriba.
 
 ## Riesgos / notas
 - **T1 y T2 comparten `build_grades_mail()`:** hacer T1 → T2 en ese orden; T2 solo
