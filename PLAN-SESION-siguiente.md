@@ -351,7 +351,10 @@ Agregar al relay `smtp-unicla` (`/app/app.py`, 178 líneas) un **segundo backend
       correo en < 1 min (Gmail/Outlook web), con tabla bordes/cabecera/nota coloreada (T2).
 - [ ] Auditoría BD: nueva fila `status=ok` (no `error`), `moodle_msgid` presente.
 - [x] Plan y diario actualizados; cambio en el relay con backup previo
-      (`/app/app.py.bak.20261027`), **el relay NO está en el repo `Dashboard-Moodle`**.
+      (`/app/app.py.bak.20261027`) **y respaldo permanente del relay en el repo**
+      (`_operacion/relay_smtp_unicla/` — `app.py` Vía B + original + README de restore,
+      commit `636739c`; el `CLIENT_SECRET` de Azure NO se versionó: **GitHub Push
+      Protection lo bloqueó** y las copias del repo lo llevan como placeholder).
 
 ## Riesgos / notas
 
