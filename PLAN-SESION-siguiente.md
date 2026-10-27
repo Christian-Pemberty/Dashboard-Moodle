@@ -254,6 +254,14 @@ imitando el patrón existente `delete_intervention()` (línea 1601):
       fondo, nota coloreada ✔. Criterios: aceptación T1/T2/T3 marcadas arriba.
 
 ## Riesgos / notas
+
+- ⚠️ **Dependencia externa del canal de correo (27-oct):** el envío real pasa por el relay
+  `smtp-unicla` (contenedor Python en el host, puerto 1026) → Microsoft Graph
+  (`app registration "Dspace"`, `Mail.Send` client_credentials). **Ese canal está roto hoy
+  (403 `ErrorAccessDenied` / 404 `MailboxNotEnabledForRESTAPI`)** → auditoría `status=error`
+  y "no me deja enviar". **No es bug del plugin**; requiere reconceder la app en Azure AD /
+  M365 (detalle completo en `DIARIO-DESARROLLO-2026-10-27.md` §4). Hasta entonces,
+  T2 solo es verificable vía preview (WYSIWYG OK) y mensaje Moodle; el correo real no sale.
 - **T1 y T2 comparten `build_grades_mail()`:** hacer T1 → T2 en ese orden; T2 solo
   reestiliza, T1 solo ancla. Si se hace T2 primero, T1 sigue (el ancla se inyecta igual).
 - El ancla `data-gm-editable` viaja en el HTML del correo recibido: inofensivo (los
