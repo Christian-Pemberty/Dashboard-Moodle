@@ -439,7 +439,8 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
       (visible desde el deploy hasta que se desoculten los ítems).
 - [ ] **Docente/usuario:** desocultar los quizzes del curso 4 en Calificaciones →
       selector de actividad + nota mínima operativos (paradigma curso 2).
-- [ ] Push a `github:Christian-Pemberty/Dashboard-Moodle` (rama `main`).
+- [x] **Push GitHub `main`:** commit `ee72bf0` (8 archivos: código T5 + plan) —
+      `45fe4ae..ee72bf0` verificado 27-oct.
 
 ---
 
