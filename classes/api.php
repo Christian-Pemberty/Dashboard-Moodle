@@ -705,9 +705,12 @@ class api {
      *
      * @param int $courseid The course ID.
      * @param int $groupid Optional course group ID.
+     * @param bool $includehidden When true, grade items hidden in the gradebook
+     *                            are included too (grades-send flow: the teacher
+     *                            explicitly selects them to send by email).
      * @return array Student roster with grade data when available.
      */
-    public static function get_grades(int $courseid, int $groupid = 0): array {
+    public static function get_grades(int $courseid, int $groupid = 0, bool $includehidden = false): array {
         global $DB, $CFG;
         require_once($CFG->libdir . '/gradelib.php');
         // Keep the participant roster independent from grade items and logs.

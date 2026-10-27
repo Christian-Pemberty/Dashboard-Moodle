@@ -24,22 +24,27 @@
 > SOLO la confirmación final del usuario (email de prueba en bandeja + 1 envío desde la
 > UI). Vea §T4 abajo (Vía A de raíz sigue pendiente con el admin M365, ya no bloquea).
 >
-> 🔵 **FASE ACTUAL (27-oct tarde-noche): T5 — Curso 4 sin actividad evaluada / sin nota
-> máxima.** Diagnóstico cerrado (NO es bug: los 4 ítems `mod=quiz` del curso 4 están
-> `hidden=1` en la libreta). Mejora UI de estado vacío (mensaje explicativo, 3 lang +
-> JS + build). **Código v2026102701 YA DESPLEGADO en el server** (swap + backup
-> `mwa_dashboard.bak.2026102701` + purge + `upgrade` `++ 2026102701: Éxito`); pendiente:
-> verificación live con `_diag55.sh`, que el docente desoculte los quizzes del curso 4,
-> y push. Vea §T5 abajo y diario §7.
+> ✅ **FASE ANTERIOR (27-oct): T5 — Curso 4 sin actividad evaluada / sin nota máxima —
+> CERRADA.** Diagnóstico (NO es bug: los 4 ítems `mod=quiz` del curso 4 están `hidden=1`
+> en la libreta). Mejora UI v2026102701 (hint `evalselect_empty`, 3 lang + JS + build)
+> **desplegada y 100% VERIFICADA en vivo** (`_diag56.sh`, 2ª sesión 27-oct: version 2026102701,
+> WS=20, todos los markers, 3 langs, HTTP 200/303, restart OK). Ver §T5 y diario §7 + §8.
+>
+> 🔵 **FASE ACTUAL (27-oct, en progreso, corte por tokens): T6 — "Enviar notas" con
+> ítems ocultos en la libreta (curso 4).** DECISIÓN USUARIO: cambiar el plugin → los
+> ítems `hidden=1` quedan SELECCIONABLES en "Enviar notas" (marcados "(oculta)") y el
+> docente puede verlos / previsualizarlos / enviarlos SIN desocultar la libreta.
+> Diseño completo en §T6; trabajo a medias (solo la firma de `api::get_grades`).
+> Ver §T6 y diario §8.
 > **Flujo de trabajo recordado por el usuario:** la verdad de origen está en el server
 > (Moodle **5.0.1** en 192.168.25.4, contenedor `moodle_app`); lo local
 > (`block_mwa_dashboard/`) se mantiene al día para subir al repo
 > `Christian-Pemberty/Dashboard-Moodle` (rama `main`).
 
-> Estado actual: v **2026102701** desplegada en producción (27-oct tarde: swap OK +
-> `upgrade` OK `++ 2026102701: Éxito`; backup `mwa_dashboard.bak.2026102701` con
-> v2026102601 conservado). **Verificación live pendiente** → script `_diag55.sh`
-> (version+WS, restart, smoke HTTP, markers).
+> Estado actual: v **2026102701** desplegada y **verificada 100% en vivo** (2ª sesión
+> 27-oct, `_diag56.sh`: version+WS=20, markers min/3-lang, HTTP 200/303, restart OK).
+> **T6 (v2026102702) EN PROGRESO** — diseño en §T6; pendiente terminar código +
+> AMD + deploy + verificación + aceptación.
 > Base de trabajo: `block_mwa_dashboard/` (raíz = plugin), tests en `tests/send_grades_mail_test.php`.
 > Contrato WYSIWYG existente: preview y envío usan la misma fuente de verdad —
 > `\block_mwa_dashboard\external::build_grades_mail()` (external.php:815) —
@@ -432,15 +437,120 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
       'version')` — **el version es FILA `(plugin,name='version',value)`, no columna**
       → PHP fatal → H4/H5/H6 (restart/smoke/markers) NO corrieron. Código desplegado
       igualmente; pendiente verificación con **`_diag55.sh`** (ya en el workspace).
-- [ ] **Verificación live** (`_diag55.sh`): version+WS con query correcta, `docker
-      restart moodle_app`, smoke HTTP (200 / `enviarnotas` 303), markers en live
-      (`evalselect_empty`, `mwaGmPreviewEdit`, `histClear`).
+- [x] **Verificación live** (2ª sesión 27-oct, `_diag56.sh`: `_diag55.sh` cortó la
+      salida tras la sección A — quirk del runner; 56 lo reemplazó): version 2026102701
+      + WS=20 + markers min (8/8) + 3 langs + HTTP 200/303 (course 2 y 4) +
+      `docker restart` healthy ✔; backup `mwa_dashboard.bak.2026102701` presente ✔.
 - [ ] **Usuario:** confirmación del hint `evalselect_empty` visible en curso 4
       (visible desde el deploy hasta que se desoculten los ítems).
 - [ ] **Docente/usuario:** desocultar los quizzes del curso 4 en Calificaciones →
       selector de actividad + nota mínima operativos (paradigma curso 2).
 - [x] **Push GitHub `main`:** commit `ee72bf0` (8 archivos: código T5 + plan) —
       `45fe4ae..ee72bf0` verificado 27-oct.
+
+---
+
+## T6 — "Enviar notas" con ítems OCultos en la libreta (curso 4) — **EN PROGRESO** (27-oct)
+
+> **DECISIÓN USUARIO (27-oct, segunda sesión):** "Cambiar el plugin (Recomendado)" —
+> los ítems `hidden=1` de la libreta quedan **SELECCIONABLES** en "Enviar notas"
+> (marcados "(oculta)"); el docente puede verlos, fijar nota mínima, previsualizar y
+> **enviarlos por email** SIN desocultar la libreta (desocultar también los expondría
+> a estudiantes en la libreta — no siempre es lo que se quiere). La página del curso 4
+> deja así de depender de la acción docente de desocultar.
+
+### 6.1 Alcance acordado (27-oct)
+- **Cambia (flujos de envío, incluyen ocultos):** WS `get_grades` (roster de la página —
+  el JS mapea `act_{seq}` de las filas de estudiante contra el sel de send-options) +
+  WS `get_grades_send_options` (selector + nota mínima) + preview y envío
+  (`build_grades_mail`). WYSIWYG garantizado: la preview MUESTRA las notas ocultas,
+  el docente las ve ANTES de enviar.
+- **SIGUE SIN CAMBIAR (mantener excluidos los ocultos — diseño aprobado por el usuario):**
+  tablero principal, snapshots (`snapshot_manager`), export. Por eso el flag
+  `$includehidden` nace en `api::get_grades()` con **default `false`**.
+
+### 6.2 Evidencia nueva (27-oct, 2ª sesión)
+- **Moodle 5.0.1 (live):** `{external_functions}` GUARDA SOLO METADATA (id, name,
+  classname, methodname, classpath, component, capabilities, services) — **NO persiste
+  parámetros/return**. Las estructuras se resuelven en runtime contra el PHP del plugin
+  (Moodle 3.x+). **Conclusión:** cambiar firmas/estructuras de WS es **seguro en el
+  deploy** (bump de versión + `upgrade.php` refresca metadata con
+  `external_update_descriptions()`, `lib/upgradelib.php:1191`). Verificado `_diag57/58/59`.
+- **Curso 4 SIGUE `hidden=1` en los 4 quizzes** (gi#9,10,11,12; re-verificado `_diag56`
+  §C) → el usuario no los desocultó; T6 los deja enviocables sin desocultar.
+- Nota quiz en curso 4: `gradepass=0` en los 4 → la nota mínima saldrá por el fallback
+  50% de la máxima (hint `passmin_fallback` existente) — el campo seguirá **editable**
+  (comportamiento actual), igual que en curso 2.
+- Runner quirk: la salida de `_diag55.sh` se cortó tras la sección A (SSH_EXIT:0, el
+  probe simple funciona); `_diag56.sh` la cubrió completa. Si se repita: dividir
+  secciones / evitar el bloque PHP largo al inicio.
+
+### 6.3 Diseño de implementación (v2026102702)
+1. **`classes/api.php` → `get_grades(int $courseid, int $groupid = 0, bool $includehidden = false)`**
+   - ✅ HECHO (27-oct): firma + docblock `@param $includehidden`.
+   - ⬜ PENDIENTE: filtro de ítems (hoy línea ~756):
+     `return $item->itemtype === 'mod' && ($includehidden || !$item->hidden);`
+   - ⬜ PENDIENTE: meta nueva por ítem (junto a `act_cmid_/act_module_`, línea ~1047):
+     `$actnames['act_hidden_' . $seq] = (int)$item->hidden;`
+2. **`classes/external.php`:**
+   - `get_grades_parameters()` + `get_grades(...)`: nuevo parámetro **`includehidden`**
+     (`PARAM_BOOL`, `VALUE_DEFAULT` false, **AL FINAL** — respetar la regla de orden
+     declaración↔firma, ver warning en `get_grades_mail_preview_parameters`).
+     Pasar a `api::get_grades($cid, $gid, $params['includehidden'])` (hoy línea 556).
+   - `get_grades_send_options()` (línea 1243): llamar `api::get_grades(..., true)`;
+     array de actividad: añadir `'hidden' => (bool)($meta['act_hidden_' . $i] ?? 0)`;
+     **QUITAR `'hidden' => 0` de la query interna a `grade_items`** (línea 1307 — si no,
+     los ítems ocultos saldrían con `grademax=0`/`passmark=0`);
+     `_returns()`: nuevo `'hidden' => new \external_value(PARAM_BOOL, ...)`.
+   - `build_grades_mail()` (línea 820/833): `api::get_grades($courseid, $groupid, true)`
+     + docblock (flujos de envío incluyen ítems ocultos DE MANERA EXPLÍCITA; el resto de
+     consumidores mantiene la exclusión).
+3. **`amd/src/enviarnotas.js`:**
+   - `loadInitial()` (línea 1197): roster WS con `includehidden: true`.
+   - `populateActivities()` (línea 563): si `a.hidden` → `label += ' ' + t('act_hidden_tag')`
+     (antes del sufijo `(max)`, o después: `Nombre (oculta) (5)`).
+4. **lang en/es/pt_br:** nueva `gradesmail_act_hidden_tag` = "(oculta en la libreta)" /
+   "(hidden in the gradebook)" / "(oculta na libreta)"; **adaptar** `gradesmail_evalselect_empty`
+   (ahora solo aparece si NO HAY NINGÚN ítem con nota en absoluto): "No se encontró
+   ninguna actividad con nota en este curso. Agrega una actividad calificada (quiz,
+   tarea...) y aparecerá en el selector." (3 idiomas).
+5. **`enviarnotas.php`:** `'act_hidden_tag'` en `$gmkeys` (línea ~50).
+6. **`tests/send_grades_mail_test.php`:**
+   - `test_email_excludes_hidden_grade_items` → REESCRIBIR como `test_email_preview_includes_hidden_grade_items`
+     (la preview del FLUJO DE ENVÍO incluye la nota 9.9 del assign oculto — aserción invertida,
+     nombre/docblock nuevos dejando clara la decisión T6).
+   - NUEVO: `test_api_default_still_excludes_hidden` (dashboard/snapshots intactos:
+     `api::get_grades(4)` sin flag → el ítem oculto NO aparece en la meta).
+   - NUEVO (opcional): `test_send_options_exposes_hidden_flag` (`get_grades_send_options`
+     devuelve `hidden=true` + `grademax>0` + `passmark` del 50% para el ítem oculto).
+7. **`version.php` → 2026102702** · README/ESTRUCTURA si tocan contratos · AMD:
+   regenerar `amd/build/enviarnotas.min.js` (terser `--comments jsdoc`), `node --check`,
+   markers: los 9 anteriores + `act_hidden_tag`.
+
+### 6.4 Deploy + verificación (procedimiento verificado `_depl55`+inner)
+1. Robocopy staging → `_stage2702_block_mwa_dashboard` (sin `.git`, sin `stage*` anidado)
+   → `scp` a host `/tmp/_stage2702_...` (ruta NUEVA en el kontainer).
+2. Inner: PRE_OK (markers) → `BACKUP_OK` `cp -a` → `mwa_dashboard.bak.2026102702`
+   (conserva v2026102701) → SWAP_OK (verificar post) → `purge_caches` →
+   `upgrade.php --non-interactive` → verificación **con la query correcta**
+   (`get_field("config_plugins","value",[plugin, name=>'version'])`).
+3. Smoke: root 200; `enviarnotas.php?course=4` → 303 (sin follow).
+4. **CHECK FUNCIONAL EN EL SERVER (PHP CLI, como docente — id de `teacherid` en
+   `mdl_block_mwa_dashboard_messages` o rol `editingteacher` del curso):**
+   `external::get_grades_send_options(4)` → 3–4 actividades con `hidden=true`,
+   `grademax>0`, `passmark>0`; y `get_grades_mail_preview(4, <alumno con nota>)` →
+   el HTML contiene los nombres de los quizzes ocultos.
+5. **Aceptación (usuario):** curso 4 → selector muestra los quizzes con "(oculta)",
+   campo nota mínima activo (fallback 50%), preview muestra las notas, 1 envío real.
+6. Push GitHub `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
+
+### 6.5 Estado al cierre de sesión (27-oct, corte por tokens)
+- [x] T5: v2026102701 **verificación live COMPLETA** (`_diag56.sh`) — cerrado.
+- [x] T6: decisión del usuario + alcance + verificación de factibilidad WS (Moodle 5).
+- [~] T6: `api.php` — SOLO la firma nueva + docblock (el resto NO tocado; código
+      válido y desplegable tal cual, pero la funcionalidad NO activa todavía).
+- [ ] Resto de §6.3 (filtro+meta api, external, JS, lang, $gmkeys, tests, version, AMD)
+  → deploy 2026102702 → §6.4 → aceptación → push.
 
 ---
 
