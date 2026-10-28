@@ -815,16 +815,22 @@ class external extends \external_api {
      *
      * The teacher comment (the only free-form input) is wrapped in a stable
      * anchor (\div[data-gm-editable="comment"]) so the in-app preview can make
-     * that — and only that — zone editable. Everything else (greeting, date,
-     * global result, grades table, footer) is always rebuilt from the DB.
+     * that — and only that — zone editable: BOTH the title (\p > \strong
+     * [data-gm-field="commentlabel"]) and the body (\p[data-gm-field=
+     * "commenttext"]) (T8: the standalone "optional message" textarea was
+     * removed, so the preview is the single place it is written). Everything
+     * else (greeting, date, global result, grades table, footer) is always
+     * rebuilt from the DB.
      *
      * @param int $courseid Course ID.
      * @param int $userid Recipient student user ID.
      * @param int $groupid Optional course group scope.
      * @param string $comment Optional teacher comment included in the email.
+     * @param string $commentlabel Optional section title; empty = the
+     *        localized default (gradesmail_email_commentlabel).
      * @return array Keys: subject, html, plain, studentname.
      */
-    private static function build_grades_mail(int $courseid, int $userid, int $groupid = 0, string $comment = ''): array {
+    private static function build_grades_mail(int $courseid, int $userid, int $groupid = 0, string $comment = '', string $commentlabel = ''): array {
         $course  = get_course($courseid);
         $comment = trim($comment);
         // Bound the only free-form input: 2000 characters, silent truncation
@@ -835,6 +841,20 @@ class external extends \external_api {
             } else {
                 $comment = substr($comment, 0, 2000);
             }
+        }
+        // T8: editable section title. Bound it too (a title is short by
+        // definition); empty falls back to the localized default label.
+        $commentlabel = trim($commentlabel);
+        if ($commentlabel !== '') {
+            if (strlen($commentlabel) > 200) {
+                if (function_exists('mb_substr')) {
+                    $commentlabel = mb_substr($commentlabel, 0, 200);
+                } else {
+                    $commentlabel = substr($commentlabel, 0, 200);
+                }
+            }
+        } else {
+            $commentlabel = get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard');
         }
 
         // T6 (grades-send flow): include grade items hidden in the gradebook —
@@ -968,11 +988,13 @@ class external extends \external_api {
         }
 
         // Editable zone of the in-app preview: the frontend enables
-        // contenteditable only inside this anchor (the label stays static).
+        // contenteditable only inside this anchor — on BOTH the title and the
+        // body (T8). The title carries data-gm-field="commentlabel" so the
+        // in-app editor can target it like the body.
         if ($comment !== '') {
             $bodyhtml .= \html_writer::start_tag('div', ['data-gm-editable' => 'comment', 'style' => 'margin:0 0 16px;']);
-            $bodyhtml .= \html_writer::tag('p', \html_writer::tag('strong',
-                s(get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard'))),
+            $bodyhtml .= \html_writer::tag('p', \html_writer::tag('strong', s($commentlabel),
+                ['data-gm-field' => 'commentlabel']),
                 ['style' => 'margin:0 0 6px;']);
             $bodyhtml .= \html_writer::tag('p', format_text($comment, FORMAT_MOODLE,
                 ['context' => \context_course::instance($courseid)]),
@@ -994,15 +1016,16 @@ class external extends \external_api {
 
     public static function get_grades_mail_preview_parameters() {
         // WARNING: declaration order MUST match the get_grades_mail_preview() signature order
-        // (courseid, userid, groupid, comment). The external API validates params and then
+        // (courseid, userid, groupid, comment, commentlabel). The external API validates params and then
         // call_user_func_array()s the RAW result positionally (array_values), so a mismatched
         // order silently shifts values between parameters (e.g. comment str into int $groupid
         // -> TypeError "must be of type int, string given").
         return new \external_function_parameters([
-            'courseid' => new \external_value(PARAM_INT, 'Course ID'),
-            'userid'   => new \external_value(PARAM_INT, 'Recipient student user ID'),
-            'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
-            'comment'  => new \external_value(PARAM_RAW, 'Optional teacher comment included in the email', VALUE_DEFAULT, ''),
+            'courseid'     => new \external_value(PARAM_INT, 'Course ID'),
+            'userid'       => new \external_value(PARAM_INT, 'Recipient student user ID'),
+            'groupid'      => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+            'comment'      => new \external_value(PARAM_RAW, 'Optional teacher comment included in the email', VALUE_DEFAULT, ''),
+            'commentlabel' => new \external_value(PARAM_RAW, 'Optional message section title (T8 editable); empty = localized default', VALUE_DEFAULT, ''),
         ]);
     }
 
@@ -1013,16 +1036,18 @@ class external extends \external_api {
      * @param int $userid Recipient student user ID.
      * @param int $groupid Optional course group scope.
      * @param string $comment Optional teacher comment.
+     * @param string $commentlabel Optional message section title (T8); empty = default.
      * @return array subject, html, plain and studentname.
      */
-    public static function get_grades_mail_preview(int $courseid, int $userid, int $groupid = 0, string $comment = ''): array {
+    public static function get_grades_mail_preview(int $courseid, int $userid, int $groupid = 0, string $comment = '', string $commentlabel = ''): array {
         global $DB, $USER, $SESSION;
 
         $params = self::validate_parameters(self::get_grades_mail_preview_parameters(), [
-            'courseid' => $courseid,
-            'userid'   => $userid,
-            'groupid'  => $groupid,
-            'comment'  => $comment,
+            'courseid'     => $courseid,
+            'userid'       => $userid,
+            'groupid'      => $groupid,
+            'comment'      => $comment,
+            'commentlabel' => $commentlabel,
         ]);
         $ctx = \context_course::instance($params['courseid']);
         self::validate_context($ctx);
@@ -1048,7 +1073,8 @@ class external extends \external_api {
             $SESSION->userid = $recipient->id;
         }
         try {
-            $mail = self::build_grades_mail($params['courseid'], $params['userid'], $groupid, (string)$params['comment']);
+            $mail = self::build_grades_mail($params['courseid'], $params['userid'], $groupid,
+                (string)$params['comment'], (string)$params['commentlabel']);
         } finally {
             $USER = $originaluser;
             if ($SESSION) {
@@ -1073,11 +1099,14 @@ class external extends \external_api {
     }
 
     public static function send_grades_mail_parameters() {
+        // T8: order MUST match the send_grades_mail() signature order
+        // (courseid, userids, comment, groupid, commentlabel — positional call).
         return new \external_function_parameters([
-            'courseid' => new \external_value(PARAM_INT, 'Course ID'),
-            'userids'  => new \external_multiple_structure(new \external_value(PARAM_INT, 'Recipient student user ID')),
-            'comment'  => new \external_value(PARAM_RAW, 'Optional teacher comment included in the email', VALUE_DEFAULT, ''),
-            'groupid'  => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+            'courseid'     => new \external_value(PARAM_INT, 'Course ID'),
+            'userids'      => new \external_multiple_structure(new \external_value(PARAM_INT, 'Recipient student user ID')),
+            'comment'      => new \external_value(PARAM_RAW, 'Optional teacher comment included in the email', VALUE_DEFAULT, ''),
+            'groupid'      => new \external_value(PARAM_INT, 'Course group ID, or 0 for all allowed groups', VALUE_DEFAULT, 0),
+            'commentlabel' => new \external_value(PARAM_RAW, 'Optional message section title (T8 editable); empty = localized default', VALUE_DEFAULT, ''),
         ]);
     }
 
@@ -1092,16 +1121,18 @@ class external extends \external_api {
      * @param array $userids Recipient student user IDs.
      * @param string $comment Optional teacher comment.
      * @param int $groupid Optional course group scope.
+     * @param string $commentlabel Optional message section title (T8); empty = default.
      * @return array success, sent, failed and per-student results.
      */
-    public static function send_grades_mail(int $courseid, array $userids, string $comment = '', int $groupid = 0): array {
+    public static function send_grades_mail(int $courseid, array $userids, string $comment = '', int $groupid = 0, string $commentlabel = ''): array {
         global $DB, $USER, $CFG, $SESSION;
 
         $params = self::validate_parameters(self::send_grades_mail_parameters(), [
-            'courseid' => $courseid,
-            'userids'  => $userids,
-            'comment'  => $comment,
-            'groupid'  => $groupid,
+            'courseid'     => $courseid,
+            'userids'      => $userids,
+            'comment'      => $comment,
+            'groupid'      => $groupid,
+            'commentlabel' => $commentlabel,
         ]);
         $ctx = \context_course::instance($params['courseid']);
         self::validate_context($ctx);
@@ -1152,7 +1183,8 @@ class external extends \external_api {
                     $SESSION->userid = $recipient->id;
                 }
                 try {
-                    $mail = self::build_grades_mail($params['courseid'], $userid, $groupid, $comment);
+                    $mail = self::build_grades_mail($params['courseid'], $userid, $groupid, $comment,
+                        (string)$params['commentlabel']);
                 } finally {
                     $USER = $originaluser;
                     if ($SESSION) {

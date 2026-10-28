@@ -331,6 +331,48 @@ final class send_grades_mail_test extends \advanced_testcase {
     }
 
     /**
+     * T8 (user request 28-oct): the section TITLE of the teacher message is now
+     * editable too. An empty title must fall back to the localized default
+     * (and the anchor must expose data-gm-field="commentlabel" for the in-app
+     * editor); a custom title must replace it in preview AND in the sent mail.
+     */
+    public function test_comment_label_editable_default_and_custom(): void {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $course = $this->getDataGenerator()->create_course();
+        $ana = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5);
+
+        // 1) Empty title -> localized default label, editable anchor present.
+        $preview = \block_mwa_dashboard\external::get_grades_mail_preview(
+            $course->id, $ana->id, 0, 'Cuerpo del mensaje.', '');
+        $this->assertStringContainsString(get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard'), $preview['html']);
+        $this->assertStringContainsString('data-gm-field="commentlabel"', $preview['html']);
+        $this->assertStringNotContainsString('Etiqueta personalizada:', $preview['html']);
+
+        // 2) Custom title -> replaces the default in the preview ...
+        $previewcustom = \block_mwa_dashboard\external::get_grades_mail_preview(
+            $course->id, $ana->id, 0, 'Cuerpo del mensaje.', 'Etiqueta personalizada:');
+        $this->assertStringNotContainsString(get_string('gradesmail_email_commentlabel', 'block_mwa_dashboard'), $previewcustom['html']);
+        $this->assertStringContainsString('Etiqueta personalizada:', $previewcustom['html']);
+
+        // ... and in the actually sent email (WYSIWYG).
+        $result = \block_mwa_dashboard\external::send_grades_mail(
+            $course->id, [$ana->id], 'Cuerpo del mensaje.', 0, 'Etiqueta personalizada:');
+        $this->assertSame(1, $result['sent']);
+
+        $row = $DB->get_record('block_mwa_dashboard_messages',
+            ['courseid' => $course->id, 'userid' => $ana->id, 'intervention_reason' => 'Grades']);
+        $this->assertNotFalse($row);
+        $this->assertStringContainsString('Etiqueta personalizada:', $row->message);
+    }
+
+    /**
      * T6 (2026-10-27 decision): the grades-SEND flow deliberately includes grade
      * items hidden in the gradebook (the teacher selects and sends them without
      * unhiding them). This test is the INVERTED version of the former

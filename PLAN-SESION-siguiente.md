@@ -1,5 +1,111 @@
 # PLAN — Sesión siguiente: block_mwa_dashboard (envío de notas)
 
+> 🔵 **FE ACTUAL (28-oct-2026, SESIÓN NUEVA): T8 — Mensaje del docente: caja opcional
+> RETIRADA + TÍTULO editable + "SOPORTE CURSOS VIRTUALES" (sin "DE").**
+>
+> **PETICIONES DEL USUARIO (texto literal):**
+> 1. Quitar la caja "Mensaje para incluir en el correo (opcional)" porque más abajo
+>    ya existe el campo Editar → el mensaje vive SOLO en la vista previa, QUEDE
+>    **DEBAJO DE LA TABLA DE NOTAS** (donde realmente lo llega a ver el estudiante).
+> 2. El texto "Un mensaje de tu docente" también debe quedar **editable**, y el
+>    **predeterminado = "Mensaje de tu docente:"** (sin artículación + dos puntos).
+> 3. El correo recibido dice "SOPORTE DE CURSOS VIRTUALES" → debe decir
+>    **"SOPORTE CURSOS VIRTUALES"** (quitar el "DE").
+>
+> **🟢 ESTADO 28-oct-2026: TODO DEPLOYADO Y VERIFICADO; queda SOLO la aceptación
+> del usuario en navegador (+ push `main`).**
+>
+> **HECHO (código terminado):**
+> - `amd/src/enviarnotas.js`: textarea `#mwaGmComment` ELIMINADO (buildUI, bindEls,
+>   listeners); estado module-level `commentValue` + `commentLabelValue`;
+>   `previewLabelField()` nueva; `injectCommentAnchor()` crea
+>   `strong[data-gm-field="commentlabel"]`; `syncCommentFromEditor()` sincroniza
+>   título+texto (vacio del título = volver al default); `toggleCommentEdit()` hace
+>   contenteditable AMBOS; `paintPreview()` pinta valores actuales; WS preview y send
+>   mandan `comment` + `commentlabel`; hint `t('comment_hint')` reemplaza la caja.
+> - `amd/build/enviarnotas.min.js`: REGENERADO con terser 5.51.2
+>   (`npx --yes terser amd/src/enviarnotas.js -o amd/build/enviarnotas.min.js --compress --mangle`,
+>   vía `cmd /c` para evitar el execution-policy de `npx.ps1`).
+>   VERIFICADO: `data-gm-field="commentlabel"` ×2, `commentlabel` ×8,
+>   `mwaGmComment` = 0, `comment_hint` ×1, `mwaGmPreviewEdit` ×2 (size 24.471).
+> - `enviarnotas.php`: `$gmkeys` — fuera `comment`/`commentplaceholder`, entra `comment_hint`.
+> - `lang/es|en|pt_br`: `gradesmail_email_commentlabel` = 'Mensaje de tu docente:'
+>   (en: 'A message from your teacher:'; pt: 'Mensagem do seu professor(a):');
+>   nueva clave `gradesmail_comment_hint` (3 idiomas); `comment`/`commentplaceholder`
+>   conservadas como referencia (ya no las usa el JS).
+> - `classes/external.php`: `build_grades_mail(..., $comment = '', $commentlabel = '')`
+>   (cap 200 chars; vacio = default lang); el `<strong>` del título ahora lleva
+>   `data-gm-field="commentlabel"`; WS `get_grades_mail_preview` (courseid, userid,
+>   groupid, comment, **commentlabel**) y `send_grades_mail` (courseid, userids,
+>   comment, groupid, **commentlabel**) — ORDEN de params == ORDEN de signature
+>   (lección T2: call_user_func_array posicional). Lint `php -l` OK en los 7 ficheros.
+> - `tests/send_grades_mail_test.php`: NUEVO `test_comment_label_editable_default_and_custom`
+>   (default con anchor commentlabel; etiqueta custom en preview Y en envío — WYSIWYG).
+> - `version.php`: **2026102801 → 2026102802** (sin schema; upgrade solo refresca
+>   la fila `config_plugins.version`, como el T7.1).
+> - `pix/banner.png`: OPTIMIZADO 730.767 → **203.507 bytes** (mismas dimensiones
+>   1471×285; carga más ligera del `<img>` publico en el correo).
+> - `relay smtp-unicla` (Vía B, 28-oct `_depl70_relay.sh`): **From con nombre
+>   visible** — nueva constante `SMTP_FALLBACK_FROM_NAME` (default
+>   **"SOPORTE CURSOS VIRTUALES"**, overridable por env; vacía = solo dirección)
+>   y `msg["From"] = "NOMBRE <usuario>"`. Backup `/app/app.py.bak.20261028`
+>   (MD5 `93cb39…`); live nuevo MD5 **`9b7a037eec35e2f3545d3a61e687df2b`**.
+>   SMOKE real OK (Graph sigue 404/403 → **250 via SMTP FALLBACK**); correo de
+>   prueba `[MWA] T8 prueba - remitente SIN 'DE' (borren)` enviado a
+>   `desarrollador.mediosymediaciones@` (M365 respeta el From-name si coincide el
+>   usuario autenticado → **pendiente: ojo del usuario en la bandeja**).
+>   Copia del repo `_operacion/relay_smtp_unicla/app.py` + README sincronizados.
+>
+> **EVIDENCIA T8 (28-oct, `_diag66.sh`):** server live T7.1 (v2026102801 disco+DB,
+> WS=20); **`noreplyname=false` (vacio)** en Moodle → el "SOPORTE DE CURSOS
+> VIRTUALES" que ve el destinatario NO viene de Moodle ni del plugin (grep limpio)
+> ni del código del relay (solo enviaba la dirección) → viene del **displayName del
+> mailbox M365** (el relay Graph sigue **403 Authorization_RequestDenied** en
+> `GET /users/…` → no se puede leer/parchear vía API; pendiente Vía A del admin,
+> como en §T4).
+>
+> **🟢 DEPLOY v2026102802 COMPLETADO 28-oct (🟢 VERIFICADO):** staging local
+> `_stage2802_block_mwa_dashboard` (109 archivos) → host `/tmp/_stage2802…` →
+> `_depl71.sh` + `_inner10.sh`: PRE_OK → BACKUP_OK (`mwa_dashboard.bak.2026102802`
+> conserva v2026102801) → SWAP_OK → **`++ 2026102802: Éxito`** → DB
+> **`config_plugins version=2026102802 | WS=20`** → `docker restart moodle_app`
+> **Up (healthy)** → HTTP root **200**, course 2 y 4 **200/303** → markers LIVE:
+> `commentlabel` + `comment_hint` en min, **`mwaGmComment` = 0** (¡el textarea
+> eliminado!), regresión `mwaGmPreviewEdit`/`act_hidden_tag` OK, `commentlabel`
+> en external.php/enviarnotas.php, `gradesmail_comment_hint` ×3 lang, banner live
+> 203 KB.
+>
+> **ESTADO AL CIERRE DE LA SESIÓN 28-oct (todo verificado; queda aceptación):**
+> 1. **SOPORTE CURSOS VIRTUALES — RESUELTO DESDE NUESTRO LADO:** origen
+>    confirmado (vía `_diag66.sh`): Moodle `noreplyname=false` (vacío), relay sin
+>    nombre en el From, plugin limpio → era el **displayName del mailbox M365**.
+>    Patch aplicado 28-oct (`_depl70_relay.sh`): la Vía B del relay ahora firma
+>    el From con `SOPORTE CURSOS VIRTUALES <soporte.cursosvirtuales@…>` (constante
+>    `SMTP_FALLBACK_FROM_NAME`). SMOKE: 250 via SMTP FALLBACK → **el usuario debe
+>    ver el correo `[MWA] T8 prueba - remitente SIN 'DE' (borren)` y confirmar el
+>    nombre en la bandeja**. ⚠️ Si M365 siguiera mostrándole "DE" (rewriting por
+>    displayName del mailbox), la única vía = admin M365 cambia el displayName de
+>    `soporte.cursosvirtuales@` (mensaje listo para entregarle) o crea un mailbox
+>    con el nombre correcto. (El parche Graph sigue en Vía A §T4.)
+> 2. **DEPLOY v2026102802 — ✅ HECHO 28-oct** (evidencia arriba): `_depl71.sh` +
+>    `_inner10.sh`, PRE/BACKUP/SWAP/`++ Éxito`/DB 2026102802|WS=20/healthy/200-303/
+>    markers T8 + regresión OK. Backup vivo: `mwa_dashboard.bak.2026102802`.
+> 3. **🔵 PENDIENTE ÚNICA — ACEPTACIÓN USUARIO** (navegador, curso de prueba):
+>    (a) la caja "Mensaje para incluir en el correo (opcional)" **ya no existe**;
+>    (b) en la vista previa, **DEBAJO de la tabla de notas**, el título
+>    "Mensaje de tu docente:" y el cuerpo son editables con el botón "Editar"
+>    (título vacío en la edición = vuelve al default);
+>    (c) 1 envío real (canal Vía B OK) con el mensaje abajo de la tabla, remitente
+>    "SOPORTE CURSOS VIRTUALES" (sin "DE") y auditoría `status=ok`.
+> 4. **🔵 PUSH `main`** → repo `Christian-Pemberty/Dashboard-Moodle` (este commit
+>    lleva código T8 + banner optimizado + relay T8 + plan/diario).
+>
+> **ACCESSOS (sesión de trabajo, no versionar):** server 192.168.25.4
+> (user `proyectosmym`, ssh OK); Moodle **5.0.1**; host contenedor `moodle_app`
+> (ruta live `/bitnami/moodle/blocks/mwa_dashboard`, php
+> `/opt/bitnami/php/bin/php`); relay SMTP contenedor `smtp-unicla`
+> (Graph credentials + fallback SMTP AUTH, ver `_operacion/relay_smtp_unicla/`).
+
 > 🔵 **FE ACTUAL (28-oct-2026): T7.1 — Banner a ANCHO COMPLETO (responsivo).**
 > El usuario vio la preview (captura, 28-oct): el banner queda **más pequeño que la
 > tabla de notas**. Causa: el `<img>` lleva `max-width:600px` (decisión T7 para el
@@ -788,6 +894,25 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
       requiere `sudo rm` — ver §12.6).
 - [x] Push `main` (28-oct, `97df4b5..957bb32`).
 - [ ] **Pendiente:** aceptación del usuario §7.1.5 (preview + envío real).
+
+#### 7.1.4-bis — Banner COMPRIMIDO solo en producción (28-oct tarde, decisión usuario)
+
+- El usuario re-comprimió `pix/banner.png`: **730 KB → 199 KB** (203,507 B, sigue
+  1471×285 PNG). sha256 nueva: `0F700F80…76EB`.
+- **Subido SOLO a producción por pedido expreso: "sin commit ni subirlo al git"**
+  (`_img28.sh`: docker cp → live; sha256 live = esperada ✔).
+- **Diagnóstico de visibilidad (`_diagg28.sh`):** origen real OK — vía IP del servidor
+  (bypass CF) la URL sirve **NUEVO** (203,507 B). La URL pública por dominio
+  servía aún la vieja (730,767 B, sha `f158dd6b…`) → **caché de borde de Cloudflare**
+  retiene el PNG viejo hasta su TTL. No toca el servidor: se resuelve sola al expirar
+  la caché CF, o con *Purge* en el dashboard de Cloudflare si se quiere inmediato.
+  Impacto mientras tanto: zero visual (misma imagen), solo más bytes transferidos.
+- **Estado git (intencional):** `pix/banner.png` del repo sigue siendo la 730 KB
+  (commit `9a2b174`); en disco local queda la 199 KB como versión vigente (staging
+  `_stage2801` también sincronizado). Regla para la próxima sesión: **nunca**
+  redeployar `pix/banner.png` desde el repo (volvería a 730 KB); si un día se
+  quiere versionar la compacta, commit + push como paso explícito del usuario.
+- Sin commit/push de este cambio (pedido del usuario). Con esto se cierra la sesión.
 
 ### 7.1.5 Aceptación T7.1 (usuario, navegador)
 

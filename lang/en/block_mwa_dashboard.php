@@ -2135,7 +2135,7 @@ $string['gradesmail_email_no_grade'] = 'No grade has been registered for this co
 $string['gradesmail_email_activity'] = 'Activity';
 $string['gradesmail_email_grade'] = 'Grade';
 $string['gradesmail_email_pending'] = 'Pending';
-$string['gradesmail_email_commentlabel'] = 'A message from your teacher';
+$string['gradesmail_email_commentlabel'] = 'A message from your teacher:';
 $string['gradesmail_email_footer'] = 'This is an automatic message sent by your teacher through the course platform. Please do not reply to this email.';
 $string['gradesmail_banner_alt'] = 'Uniclaritiana - Foundation University';
 $string['settings_gradesmail_banner'] = 'Grades email banner';
@@ -2154,6 +2154,9 @@ $string['gradesmail_deselectall'] = 'Deselect all';
 $string['gradesmail_selectedcount'] = '{count} student(s) selected';
 $string['gradesmail_comment'] = 'Message to include in the email (optional)';
 $string['gradesmail_commentplaceholder'] = 'A note for the students, included below the grades table in the email...';
+// T8: the optional-message box was removed from the form; the message (title +
+// body) is edited inside the preview and lands below the grades table.
+$string['gradesmail_comment_hint'] = 'The teacher message is optional: write it in the preview with the "Edit" button (title and body). It is delivered below the grades table.';
 $string['gradesmail_preview'] = 'Preview';
 $string['gradesmail_previewtitle'] = 'Email preview';
 $string['gradesmail_previewsubject'] = 'Subject';

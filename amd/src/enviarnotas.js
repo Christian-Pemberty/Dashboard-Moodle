@@ -74,7 +74,13 @@ define(['core/ajax'], function(Ajax) {
     var selOrder = [];           // checked students, painted in table order (stable chips).
     var previewActive = null;    // student currently shown in the preview.
     var previewCache = {};       // userid -> get_grades_mail_preview response (no re-query).
-    var commentEditing = false;  // T1: is the preview comment zone editable right now.
+    var commentEditing = false;  // T1/T8: is the preview comment zone editable right now.
+    // T8: the standalone "optional message" textarea was REMOVED (user decision 28-oct).
+    // The message (title + body) lives ONLY inside the preview editable zone, below
+    // the grades table. These are the module-level values synced from that zone;
+    // they are sent to the preview and send web services as `comment` / `commentlabel`.
+    var commentValue = '';
+    var commentLabelValue = '';  // '' = use the server default label.
 
     var t = function(key) {
         return (typeof str[key] === 'string' && str[key] !== '') ? str[key] : key;
@@ -277,10 +283,7 @@ define(['core/ajax'], function(Ajax) {
             '      </table>' +
             '      <p class="mwa-gm-empty" id="mwaGmEmpty" style="display:none">' + esc(t('nostudents')) + '</p>' +
             '    </section>' +
-            '    <section class="mwa-gm-card">' +
-            '      <label class="mwa-gm-label" for="mwaGmComment">' + esc(t('comment')) + '</label>' +
-            '      <textarea id="mwaGmComment" class="mwa-gm-textarea" rows="3" placeholder="' + esc(t('commentplaceholder')) + '"></textarea>' +
-            '    </section>' +
+            '    <p class="mwa-gm-hint">' + esc(t('comment_hint')) + '</p>' +
             '    <div class="mwa-gm-actions mwa-gm-actions-end">' +
             '      <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmPreviewBtn">' + esc(t('preview')) + '</button>' +
             '      <button type="button" class="mwa-gm-btn mwa-gm-btn-primary" id="mwaGmSendBtn">' + esc(t('send')) + '</button>' +
@@ -360,7 +363,6 @@ define(['core/ajax'], function(Ajax) {
         els.table = els.wrap.querySelector('#mwaGmTable');
         els.rows = els.wrap.querySelector('#mwaGmRows');
         els.empty = els.wrap.querySelector('#mwaGmEmpty');
-        els.comment = els.wrap.querySelector('#mwaGmComment');
         els.previewBtn = els.wrap.querySelector('#mwaGmPreviewBtn');
         els.sendBtn = els.wrap.querySelector('#mwaGmSendBtn');
         els.previewCard = els.wrap.querySelector('#mwaGmPreviewCard');
@@ -655,6 +657,12 @@ define(['core/ajax'], function(Ajax) {
         return a ? a.querySelector('[data-gm-field="commenttext"]') : null;
     };
 
+    // T8: the section TITLE is editable too (same anchor, different field).
+    var previewLabelField = function() {
+        var a = previewAnchor();
+        return a ? a.querySelector('[data-gm-field="commentlabel"]') : null;
+    };
+
     var injectCommentAnchor = function() {
         if (!els.previewBody) {
             return null;
@@ -663,9 +671,10 @@ define(['core/ajax'], function(Ajax) {
         anchor.setAttribute('data-gm-editable', 'comment');
         anchor.setAttribute('style', 'margin:0 0 16px;');
         var label = document.createElement('p');
-        label.setAttribute('style', 'margin:0 0 6px;');
+        label.setAttribute('style', 'margin:0 6px;');
         var strong = document.createElement('strong');
-        strong.textContent = t('email_commentlabel');
+        strong.textContent = (commentLabelValue !== '') ? commentLabelValue : t('email_commentlabel');
+        strong.setAttribute('data-gm-field', 'commentlabel');
         label.appendChild(strong);
         var field = document.createElement('p');
         field.setAttribute('data-gm-field', 'commenttext');
@@ -673,17 +682,24 @@ define(['core/ajax'], function(Ajax) {
         anchor.appendChild(label);
         anchor.appendChild(field);
         els.previewBody.insertBefore(anchor, els.previewBody.lastElementChild);
+        anchor.querySelectorAll('[data-gm-field]').forEach(function(z) {
+            z.addEventListener('input', syncCommentFromEditor);
+        });
         return anchor;
     };
 
     var syncCommentFromEditor = function() {
         var field = previewCommentField();
-        if (!field || document.activeElement === els.comment) {
-            return;
+        if (field) {
+            commentValue = (field.innerText || field.textContent || '').replace(/\n+$/g, '').trim();
         }
-        // Plain text is the contract of the textarea (server formats it with
-        // FORMAT_MOODLE, exactly as with the classic textarea input).
-        els.comment.value = (field.innerText || field.textContent || '').replace(/\n+$/g, '');
+        var label = previewLabelField();
+        if (label) {
+            var lab = (label.innerText || label.textContent || '').replace(/\n+$/g, '').trim();
+            // '' reverts to the server default label (an empty title means
+            // "use the plugin's own text", exactly like the server side).
+            commentLabelValue = (lab === t('email_commentlabel')) ? '' : lab;
+        }
     };
 
     var toggleCommentEdit = function() {
@@ -693,6 +709,11 @@ define(['core/ajax'], function(Ajax) {
             if (done) {
                 done.removeAttribute('contenteditable');
                 done.classList.remove('mwa-gm-editing');
+            }
+            var doneLabel = previewLabelField();
+            if (doneLabel) {
+                doneLabel.removeAttribute('contenteditable');
+                doneLabel.classList.remove('mwa-gm-editing');
             }
             if (els.previewEdit) {
                 els.previewEdit.textContent = t('preview_edit');
@@ -704,6 +725,11 @@ define(['core/ajax'], function(Ajax) {
         var field = anchor ? anchor.querySelector('[data-gm-field="commenttext"]') : null;
         if (!field) {
             return;
+        }
+        var label = anchor ? anchor.querySelector('[data-gm-field="commentlabel"]') : null;
+        if (label) {
+            label.setAttribute('contenteditable', 'true');
+            label.classList.add('mwa-gm-editing');
         }
         field.setAttribute('contenteditable', 'true');
         field.classList.add('mwa-gm-editing');
@@ -717,8 +743,8 @@ define(['core/ajax'], function(Ajax) {
     };
 
     // Paints one student's preview from a server response and re-syncs the
-    // comment zone with the CURRENT textarea value (the cached HTML still
-    // holds whatever comment was active when it was fetched).
+    // comment zone (title + body) with the CURRENT module values (the cached
+    // HTML still holds whatever comment was active when it was fetched).
     var paintPreview = function(userid, res) {
         commentEditing = false;
         if (els.previewEdit) {
@@ -732,8 +758,13 @@ define(['core/ajax'], function(Ajax) {
         els.previewBody.innerHTML = (res && res.html) || '';
         els.previewCard.style.display = '';
         var field = previewCommentField();
+        var label = previewLabelField();
+        if (label) {
+            label.textContent = (commentLabelValue !== '') ? commentLabelValue : t('email_commentlabel');
+            label.addEventListener('input', syncCommentFromEditor);
+        }
         if (field) {
-            field.innerText = (els.comment.value || '').trim();
+            field.innerText = (commentValue || '').trim();
             field.addEventListener('input', syncCommentFromEditor);
         }
         syncPreviewChips();
@@ -756,7 +787,8 @@ define(['core/ajax'], function(Ajax) {
             courseid: courseid,
             userid: userid,
             groupid: groupid,
-            comment: (els.comment.value || '').trim()
+            comment: (commentValue || '').trim(),
+            commentlabel: (commentLabelValue || '').trim()
         }).then(function(res) {
             if (res && res.html) {
                 previewCache[userid] = res;
@@ -858,7 +890,8 @@ define(['core/ajax'], function(Ajax) {
             courseid: courseid,
             userids: ids,
             groupid: groupid,
-            comment: (els.comment.value || '').trim()
+            comment: (commentValue || '').trim(),
+            commentlabel: (commentLabelValue || '').trim()
         }).then(function(res) {
             renderResults(res);
             if (hist.started && res && res.sent > 0) {
@@ -1032,16 +1065,10 @@ define(['core/ajax'], function(Ajax) {
         els.previewBtn.addEventListener('click', doPreview);
         els.sendBtn.addEventListener('click', doSend);
 
-        // T1: edit the comment right inside the preview; the textarea and the
-        // editable zone stay in sync while the other one is not focused.
+        // T1/T8: edit the message (title + body) right inside the preview; the
+        // module values (commentValue / commentLabelValue) stay in sync while
+        // the user types (no more standalone textarea — plan T8).
         els.previewEdit.addEventListener('click', toggleCommentEdit);
-        els.comment.addEventListener('input', function() {
-            var field = previewCommentField();
-            if (!field || document.activeElement === field) {
-                return;
-            }
-            field.innerText = els.comment.value;
-        });
 
         // T3a: chips inside the preview card switch the shown student without
         // re-querying (the first time per student it is cached, see the

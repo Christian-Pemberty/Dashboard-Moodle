@@ -42,7 +42,9 @@ $PAGE->requires->css(new moodle_url('/blocks/mwa_dashboard/styles/gradesmail.css
 
 $gmkeys = [
     'students', 'col_student', 'col_grade', 'selectall', 'deselectall', 'selectedcount',
-    'comment', 'commentplaceholder', 'preview', 'previewtitle', 'previewsubject', 'send',
+    // T8: el textarea opcional se retiró; el mensaje (título + texto) se
+    // edita dentro de la vista previa. 'comment_hint' orienta al docente.
+    'comment_hint', 'preview', 'previewtitle', 'previewsubject', 'send',
     'sending', 'confirm_send', 'noselection', 'nostudents', 'results', 'status_sent',
     'status_error', 'status_notenrolled', 'channel_email', 'channel_moodle', 'nograde',
     'error_generic',

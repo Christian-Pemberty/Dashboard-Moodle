@@ -2138,7 +2138,7 @@ $string['gradesmail_email_no_grade'] = 'Ainda não há notas registradas neste c
 $string['gradesmail_email_activity'] = 'Atividade';
 $string['gradesmail_email_grade'] = 'Nota';
 $string['gradesmail_email_pending'] = 'Pendente';
-$string['gradesmail_email_commentlabel'] = 'Uma mensagem do seu professor(a)';
+$string['gradesmail_email_commentlabel'] = 'Mensagem do seu professor(a):';
 $string['gradesmail_email_footer'] = 'Esta é uma mensagem automática enviada pelo seu professor(a) por meio da plataforma do curso. Não responda a este e-mail.';
 $string['gradesmail_banner_alt'] = 'Uniclaritiana – Fundação Universitária Claretiana';
 $string['settings_gradesmail_banner'] = 'Banner do e-mail de notas';
@@ -2157,6 +2157,9 @@ $string['gradesmail_deselectall'] = 'Desmarcar todos';
 $string['gradesmail_selectedcount'] = '{count} estudante(s) selecionado(s)';
 $string['gradesmail_comment'] = 'Mensagem para incluir no e-mail (opcional)';
 $string['gradesmail_commentplaceholder'] = 'Uma nota para os estudantes, incluída abaixo da tabela de notas no e-mail...';
+// T8: a caixa de mensagem opcional foi removida do formulário; o título e o
+// texto se editam na pré-visualização e chegam abaixo da tabela de notas.
+$string['gradesmail_comment_hint'] = 'A mensagem do docente é opcional: escreva-a na pré-visualização com o botão «Editar» (título e texto). Chega abaixo da tabela de notas.';
 $string['gradesmail_preview'] = 'Pré-visualizar';
 $string['gradesmail_previewtitle'] = 'Pré-visualização do e-mail';
 $string['gradesmail_previewsubject'] = 'Assunto';

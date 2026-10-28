@@ -36,6 +36,11 @@ FALLBACK_SENDERS = [
 SMTP_FALLBACK_HOST = os.environ.get("SMTP_FALLBACK_HOST", "smtp.office365.com").strip().lower()
 SMTP_FALLBACK_PORT = int(os.environ.get("SMTP_FALLBACK_PORT", "587"))
 
+# T8 (28-oct): nombre visible del remitente (usuario: debe decir "SOPORTE CURSOS
+# VIRTUALES", sin "DE"). Con SMTP AUTH, M365 respeta el From-name si el usuario
+# autenticado coincide (soporte.cursosvirtuales@uniclaretiana.edu.co).
+SMTP_FALLBACK_FROM_NAME = os.environ.get("SMTP_FALLBACK_FROM_NAME", "SOPORTE CURSOS VIRTUALES").strip()
+
 def _load_smtp_creds():
     user = os.environ.get("SMTP_FALLBACK_USER", "").strip()
     psw  = os.environ.get("SMTP_FALLBACK_PASS", "").strip()
@@ -61,7 +66,8 @@ def smtp_fallback_send(raw_to, subject, html_body, text_body):
     from email.utils import formatdate
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = SMTP_FALLBACK_USER
+    _fromname = (SMTP_FALLBACK_FROM_NAME or "").strip()
+    msg["From"] = (_fromname + " <" + SMTP_FALLBACK_USER + ">") if _fromname else SMTP_FALLBACK_USER
     msg["To"] = ", ".join(raw_to)
     msg["Date"] = formatdate(localtime=True)
     attached = False

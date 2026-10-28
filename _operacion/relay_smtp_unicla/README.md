@@ -10,9 +10,15 @@
 
 | Archivo | Versión | MD5 (vivo en contenedor) | Qué contiene |
 |---|---|---|---|
-| `app.py` | **Actual en producción** (con Vía B) — 27-oct-2026 | `93cb39691a4c137a4ee414801e323867` | Relay completo: SMTP `aiosmtpd` (1025→host 1026), cadena Graph
-   `sendMail` (3 senders) + **fallback SMTP AUTH** a `smtp.office365.com:587`. |
+| `app.py` | **Actual en producción** (con Vía B + T8 From-name) — 28-oct-2026 | `9b7a037eec35e2f3545d3a61e687df2b` | Relay completo: SMTP `aiosmtpd` (1025→host 1026), cadena Graph
+   `sendMail` (3 senders) + **fallback SMTP AUTH** a `smtp.office365.com:587` +
+   **T8**: el From de la Vía B incluye nombre visible `SOPORTE CURSOS VIRTUALES`
+   (constante `SMTP_FALLBACK_FROM_NAME`, overridable por env; vacía = solo dirección). |
 | `app.py.orig.20261021.bak` | **Original** (solo Graph, sin Vía B) | `76e246bd9f85f92fa1bffd79bc536956` | El relay como estaba antes del 27-oct. **Usar solo para rollback.** |
+
+> Backups del propio contenedor (28-oct): `/app/app.py.bak.20261028`
+> (= Vía B antes de T8, MD5 `93cb39691a4c137a4ee414801e323867`) y
+> `/app/app.py.bak.20261027` (= original pre-Vía B).
 
 > **⚠️ Diferencia única entre la copia del repo y la viva en el contenedor:** la
 > línea del `CLIENT_SECRET` (Azure, tenant M365). GitHub **Push Protection bloqueó el
@@ -31,7 +37,8 @@
 - **Credenciales SMTP (NO están en este repo):** `/app/.smtp_creds` (permiso 600) —
   línea 1 = `soporte.cursosvirtuales@uniclaretiana.edu.co`, línea 2 = app password.
   El relay también las acepta por env `SMTP_FALLBACK_USER` / `SMTP_FALLBACK_PASS`.
-- Backup de emergencia en el propio contenedor: `/app/app.py.bak.20261027` (= original).
+- Backups de emergencia en el propio contenedor: `/app/app.py.bak.20261028`
+  (= Vía B, pre-T8) y `/app/app.py.bak.20261027` (= original).
 
 ## Restaurar la versión en producción (Vía B) si se corrompe `/app/app.py`
 

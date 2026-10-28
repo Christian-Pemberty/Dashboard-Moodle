@@ -32,7 +32,7 @@ $string['gradesmail_email_no_grade'] = 'Aún no se ha registrado ninguna nota pa
 $string['gradesmail_email_activity'] = 'Actividad';
 $string['gradesmail_email_grade'] = 'Nota';
 $string['gradesmail_email_pending'] = 'Pendiente';
-$string['gradesmail_email_commentlabel'] = 'Un mensaje de tu docente';
+$string['gradesmail_email_commentlabel'] = 'Mensaje de tu docente:';
 $string['gradesmail_email_footer'] = 'Este es un mensaje automático enviado por tu docente a través de la plataforma del curso. Por favor, no respondas a este correo.';
 $string['gradesmail_banner_alt'] = 'Uniclaritiana – Fundación Universitaria Claretiana';
 $string['settings_gradesmail_banner'] = 'Banner del correo de notas';
@@ -49,8 +49,14 @@ $string['gradesmail_col_grade'] = 'Resultado global';
 $string['gradesmail_selectall'] = 'Seleccionar todos';
 $string['gradesmail_deselectall'] = 'Deseleccionar todos';
 $string['gradesmail_selectedcount'] = '{count} estudiante(s) seleccionado(s)';
+// T8: la caja "Mensaje para incluir en el correo (opcional)" se retiró del
+// formulario; el mensaje vive SOLO en la vista previa (botón Editar) y llega
+// debajo de la tabla de notas. Estas dos cadenas quedaron como referencia
+// histórica (el placeholder describe dónde cae el mensaje en el correo).
 $string['gradesmail_comment'] = 'Mensaje para incluir en el correo (opcional)';
 $string['gradesmail_commentplaceholder'] = 'Una nota para los estudiantes, que se incluirá debajo de la tabla de notas en el correo...';
+// T8: aviso que reemplaza a la caja opcional.
+$string['gradesmail_comment_hint'] = 'El mensaje del docente es opcional: escríbelo en la vista previa con el botón «Editar» (título y texto). Llega debajo de la tabla de notas.';
 $string['gradesmail_preview'] = 'Vista previa';
 $string['gradesmail_previewtitle'] = 'Vista previa del correo';
 $string['gradesmail_previewsubject'] = 'Asunto';
