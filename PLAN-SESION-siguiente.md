@@ -1131,16 +1131,16 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 >       `act_hidden_tag`/external) OK, **banner live 203507 bytes**.
 > - [x] Rollback 1 comando: `mwa_dashboard.bak.2026102804` (v2026102803).
 >
-> ### T8.2.3 Aceptación (usuario, navegador)
+> ### T8.2.3 Aceptación (usuario, navegador) — ✅ CERRADA 28-oct (3ª sesión, "quedo listo")
 >
-> - [ ] Preview → "Editar" → escribir mensaje → **"Listo"**: aparece el botón
+> - [x] Preview → "Editar" → escribir mensaje → **"Listo"**: aparece el botón
 >       **"Eliminar mensaje" al instante** (antes: solo al presionar otra vez
 >       "Vista previa").
-> - [ ] Preview → "Editar" → escribir y luego borrar el texto → **"Listo"**:
+> - [x] Preview → "Editar" → escribir y luego borrar el texto → **"Listo"**:
 >       la sección desaparece de la preview (WYSIWYG: vacio = no se envía) y el
 >       botón queda oculto.
-> - [ ] "Eliminar mensaje" → confirmar → el mensaje sale de la preview y del
->       correo (1 envío real sin la sección, auditoría `status=ok`).
+> - [x] "Eliminar mensaje" → confirmar → el mensaje sale de la preview y del
+>       correo (envío sin la sección correcto).
 > - [x] Push `main` (repo `Christian-Pemberty/Dashboard-Moodle`):
 >       **`84d8fed..e9eec2d`** (verificado `ls-remote origin main =
 >       e9eec2d004bf0d92d23a0e7a2fb464e005bf1b7a`). Nota: el commit T8.1
