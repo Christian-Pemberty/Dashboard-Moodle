@@ -116,6 +116,10 @@ $string['gradesmail_error_generic'] = 'La solicitud falló. Por favor, inténtal
 $string['gradesmail_preview_edit'] = 'Editar';
 $string['gradesmail_preview_done'] = 'Listo';
 $string['gradesmail_preview_chips_hint'] = 'Haz clic en un nombre para ver su correo';
+// T8.1 (28-oct): "Eliminar mensaje" — quitar el mensaje del docente del correo.
+$string['gradesmail_preview_delete'] = 'Eliminar mensaje';
+$string['gradesmail_comment_delete_title'] = '¿Eliminar el mensaje del docente?';
+$string['gradesmail_comment_delete_body'] = 'El mensaje y su título se quitan del correo (los estudiantes lo recibirán sin esa sección). Podrás volver a escribirlo con «Editar».';
 // Gestión del historial (T3b): borrar por fila + limpiar todo.
 $string['gradesmail_hist_del_title'] = '¿Borrar este registro?';
 $string['gradesmail_hist_del_body'] = 'Se eliminará el registro de envío de notas de este estudiante. Esta acción no se puede deshacer.';

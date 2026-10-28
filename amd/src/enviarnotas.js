@@ -293,6 +293,9 @@ define(['core/ajax'], function(Ajax) {
             '        <h2>' + esc(t('previewtitle')) + '</h2>' +
             '        <span class="mwa-gm-student" id="mwaGmPreviewStudent"></span>' +
             '        <button type="button" class="mwa-gm-btn mwa-gm-btn-sec" id="mwaGmPreviewEdit">' + esc(t('preview_edit')) + '</button>' +
+            /* T8.1: visible only while a message exists (see refreshPreviewDeleteBtn). */
+            '        <button type="button" class="mwa-gm-btn mwa-gm-btn-del" id="mwaGmPreviewDelete"' +
+            ' style="display:none">' + esc(t('preview_delete')) + '</button>' +
             '      </div>' +
             '      <p class="mwa-gm-hint">' + esc(t('preview_chips_hint')) + '</p>' +
             '      <div class="mwa-gm-chips mwa-gm-chips-students" id="mwaGmPreviewChips" style="display:none"></div>' +
@@ -370,6 +373,7 @@ define(['core/ajax'], function(Ajax) {
         els.previewSubject = els.wrap.querySelector('#mwaGmPreviewSubject');
         els.previewBody = els.wrap.querySelector('#mwaGmPreviewBody');
         els.previewEdit = els.wrap.querySelector('#mwaGmPreviewEdit');
+        els.previewDelete = els.wrap.querySelector('#mwaGmPreviewDelete');
         els.previewChips = els.wrap.querySelector('#mwaGmPreviewChips');
         els.resultsCard = els.wrap.querySelector('#mwaGmResultsCard');
         els.resultsSummary = els.wrap.querySelector('#mwaGmResultsSummary');
@@ -624,6 +628,10 @@ define(['core/ajax'], function(Ajax) {
                 commentEditing = false;
                 els.previewEdit.textContent = t('preview_edit');
             }
+            // T8.1: with the card hidden, the delete button goes with it.
+            if (els.previewDelete) {
+                els.previewDelete.style.display = 'none';
+            }
             els.previewCard.style.display = 'none';
         }
     };
@@ -742,6 +750,33 @@ define(['core/ajax'], function(Ajax) {
         }, 0);
     };
 
+    // T8.1: "Eliminar mensaje" (button next to "Editar") — clears the teacher
+    // message (title + body) so it does NOT reach the email. The server drops
+    // the whole section when `comment` is empty, so after deleting the preview
+    // must hide it too (WYSIWYG: what is shown is exactly what will be sent).
+    var refreshPreviewDeleteBtn = function() {
+        if (!els.previewDelete || els.previewCard.style.display === 'none') {
+            return;
+        }
+        var hasMessage = ((commentValue || '').trim() !== '') || (previewAnchor() !== null);
+        els.previewDelete.style.display = hasMessage ? '' : 'none';
+    };
+
+    var deleteCommentMessage = function() {
+        if (commentEditing) {
+            // Exit edit mode first (restores the "Listo" -> "Editar" label and
+            // removes contenteditable from both fields).
+            toggleCommentEdit();
+        }
+        commentValue = '';
+        commentLabelValue = '';
+        var anchor = previewAnchor();
+        if (anchor) {
+            anchor.remove();
+        }
+        refreshPreviewDeleteBtn();
+    };
+
     // Paints one student's preview from a server response and re-syncs the
     // comment zone (title + body) with the CURRENT module values (the cached
     // HTML still holds whatever comment was active when it was fetched).
@@ -757,16 +792,37 @@ define(['core/ajax'], function(Ajax) {
         // persisted into the DOM longer than one render (plan T1).
         els.previewBody.innerHTML = (res && res.html) || '';
         els.previewCard.style.display = '';
+        // T8.1: the comment section is part of the SENT email only when
+        // `comment` is non-empty (the server drops it otherwise) → keep the
+        // preview in exact 1-to-1 sync with what will be sent:
+        var hasComment = ((commentValue || '').trim() !== '');
+        var freshAnchor = false;
+        if (previewAnchor() !== null && !hasComment) {
+            // Stale section left in a cached HTML fetched while the message
+            // still had text (deleted since) → remove it.
+            previewAnchor().remove();
+        }
+        if (previewAnchor() === null && hasComment) {
+            // Cached HTML fetched with an empty comment: inject the same
+            // anchor the server would render, so the preview shows it.
+            injectCommentAnchor();
+            freshAnchor = true;
+        }
         var field = previewCommentField();
         var label = previewLabelField();
         if (label) {
-            label.textContent = (commentLabelValue !== '') ? commentLabelValue : t('email_commentlabel');
-            label.addEventListener('input', syncCommentFromEditor);
+            if (!freshAnchor) {
+                label.textContent = (commentLabelValue !== '') ? commentLabelValue : t('email_commentlabel');
+                label.addEventListener('input', syncCommentFromEditor);
+            }
         }
         if (field) {
             field.innerText = (commentValue || '').trim();
-            field.addEventListener('input', syncCommentFromEditor);
+            if (!freshAnchor) {
+                field.addEventListener('input', syncCommentFromEditor);
+            }
         }
+        refreshPreviewDeleteBtn();
         syncPreviewChips();
     };
 
@@ -1069,6 +1125,13 @@ define(['core/ajax'], function(Ajax) {
         // module values (commentValue / commentLabelValue) stay in sync while
         // the user types (no more standalone textarea — plan T8).
         els.previewEdit.addEventListener('click', toggleCommentEdit);
+
+        // T8.1: "Eliminar mensaje" — the user decides NOT to send the teacher
+        // message: confirm, then clear title + body and remove the section
+        // from the preview (the server omits it from the email when empty).
+        els.previewDelete.addEventListener('click', function() {
+            openConfirm(t('comment_delete_title'), t('comment_delete_body'), deleteCommentMessage);
+        });
 
         // T3a: chips inside the preview card switch the shown student without
         // re-querying (the first time per student it is cached, see the

@@ -2216,6 +2216,10 @@ $string['gradesmail_error_generic'] = 'The request failed. Please try again.';
 $string['gradesmail_preview_edit'] = 'Edit';
 $string['gradesmail_preview_done'] = 'Done';
 $string['gradesmail_preview_chips_hint'] = 'Click a name to see that student\'s email';
+// T8.1 (28-oct): "Delete message" — remove the teacher message from the email.
+$string['gradesmail_preview_delete'] = 'Delete message';
+$string['gradesmail_comment_delete_title'] = 'Delete the teacher message?';
+$string['gradesmail_comment_delete_body'] = 'The message and its title are removed from the email (students will receive it without that section). You can write it again with "Edit".';
 // History management (T3b): row delete + clear all.
 $string['gradesmail_hist_del_title'] = 'Delete this record?';
 $string['gradesmail_hist_del_body'] = 'This removes the grades-mail record for this student. This action cannot be undone.';

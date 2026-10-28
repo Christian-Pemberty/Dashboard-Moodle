@@ -1,7 +1,16 @@
 # PLAN — Sesión siguiente: block_mwa_dashboard (envío de notas)
 
-> 🔵 **FE ACTUAL (28-oct-2026, SESIÓN NUEVA): T8 — Mensaje del docente: caja opcional
-> RETIRADA + TÍTULO editable + "SOPORTE CURSOS VIRTUALES" (sin "DE").**
+> 🔵 **FE ACTUAL (28-oct-2026, SESIÓN NUEVA): T8.1 — Refinamiento del mensaje del
+> docente (pedidos del usuario sobre la preview):** (1) en modo edición los dos
+> campos (título y texto) **no queden tan juntos** (mayor separación) y el
+> **título se alinee con el cuerpo** (mismo ancho/margen); (2) **opción "Eliminar
+> mensaje"** para decidir NO enviar el mensaje del docente sin dejarlo "ahí"
+> (botón dedicado en la cabecera de la preview, no una X dentro del campo).
+> **Código local HECHO** (v2026102803): JS + CSS + lang ×3 + `$gmkeys` + AMD min
+> regenerado; ver §T8.1.
+>
+> ✅ **CERRADA (deploy v2026102802 verificado 28-oct): T8 — Mensaje del docente:
+> caja opcional RETIRADA + TÍTULO editable + "SOPORTE CURSOS VIRTUALES" (sin "DE").**
 >
 > **PETICIONES DEL USUARIO (texto literal):**
 > 1. Quitar la caja "Mensaje para incluir en el correo (opcional)" porque más abajo
@@ -924,6 +933,136 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 - [ ] (Opcional) comprobar en Outlook desktop 365: banner a 600px fijo (fallback Word,
       aceptado por diseño) — no regresa a 1471px desbordado.
 - [ ] Estado `T7` (§7.4) se cierra CON este (misma característica).
+
+---
+
+## T8.1 — Refinamiento del editor del mensaje del docente (NUEVA, 28-oct sesión 2)
+
+> **Pedidos del usuario (28-oct, con captura de la preview en modo edición):**
+> 1. Los campos de edición (título "Mensaje Profesor:" y el cuerpo) **quedan muy
+>    juntos** → "que los campos de edición no queden tan juntos, que estén un poco
+>    más separados" (solo al momento de editar).
+> 2. "que el mensaje del docente se alinee con el otro campo" → el campo del
+>    **título debe alinearse con el del cuerpo** (hoy el título era un `<strong>`
+>    a ancho de contenido: caja corta junto a una caja a ancho completo).
+> 3. **Opción para NO enviar el mensaje:** hoy solo existe "Editar"/"Listo"; si el
+>    docente decide no mandar mensaje, no hay forma de sacarlo del correo sin
+>    re-crear la sección. El usuario propuso: (a) botón "Eliminar mensaje
+>    docente" al lado de "Editar", o (b) una X en el campo de edición.
+>
+> **DECISIÓN (recomendada y aplicada — opción A, botón dedicado):**
+> - Un **botón "Eliminar mensaje"** (`#mwaGmPreviewDelete`) en la cabecera de la
+>   preview, **junto a** "Editar"/"Listo". Se muestra **solo mientras el mensaje
+>   exista** (texto distinto de vacio O sección presente en la preview).
+> - **Por qué no la X dentro del campo:** la X solo existiría en modo edición (el
+>   docente podría no estar editando y querer borrar) y el campo de título es un
+>   `<strong>` de una línea donde una X compite con el propio texto; el botón
+>   dedicado es descubrible en cualquier estado y semánticamente limpio
+>   ("Eliminar" = decidir no enviar; "Editar" = escribir/cambiar).
+> - **Comportamiento (WYSIWYG):** al confirmar el modal, se limpian
+>   `commentValue` y `commentLabelValue` (el título vuelve al default), se sale
+>   del modo edición y la **sección desaparece de la preview**: el servidor ya
+>   omite la sección completa cuando `comment` está vacio (`build_grades_mail()`,
+>   `if ($comment !== '')`) → lo que se ve en la preview es EXACTAMENTE lo que
+>   se envía. Se puede volver a escribir después con "Editar" (inyecta el ancla
+>   vacía, como T1).
+> - **Cero cambios de backend/WS:** el comportamiento del servidor (vacio = sin
+>   sección) ya es el contrato de T8; T8.1 solo aplica JS + CSS + cadenas.
+>
+> ### T8.1.1 Cambios (v2026102803)
+>
+> 1. **`amd/src/enviarnotas.js`:**
+>    - `buildUI()`: botón `#mwaGmPreviewDelete` (clase `mwa-gm-btn-del`) en la
+>      cabecera de la preview, `style="display:none"` por defecto.
+>    - `bindEls()`: `els.previewDelete`.
+>    - Nuevos: `refreshPreviewDeleteBtn()` (visible si `commentValue` no vacío
+>      O hay ancla `data-gm-editable="comment"` en el DOM; oculto si la card de
+>      preview está oculta) y `deleteCommentMessage()` (sale del modo edición,
+>      limpia `commentValue`/`commentLabelValue`, quita el ancla del DOM).
+>    - `bindEvents()`: clic → `openConfirm(t('comment_delete_title'),
+>      t('comment_delete_body'), deleteCommentMessage)` (mismo modal de toda la
+>      app; la acción borra el borrador, merecía confirmación).
+>    - `paintPreview()`: **sincronía 1:1 preview ↔ correo que se enviará** —
+>      si `comment` vacío: la ancla residual de un HTML caché se **elimina** del
+>      DOM (antes quedaba el título + caja vacía, que SÍ difiere del correo);
+>      si `comment` no vacío pero el HTML caché no trae ancla: se **inyecta** el
+>      ancla (mismo marcado del servidor) para mostrarla.
+>    - `syncPreviewChips()`: al ocultar la card (selección vacía) también oculta
+>      el botón.
+> 2. **`styles/gradesmail.css`:**
+>    - `mwa-gm-btn-del` (blanco/borde rojo suave, hover `#fdf1f1`) — destructivo
+>      pero secundario, no compite con el azul primario de "Enviar".
+>    - **Separación + alineación en modo edición** (solo in-app; el correo no
+>      toca sus estilos inline email-safe):
+>      ```css
+>      [data-gm-editable="comment"] [data-gm-field="commentlabel"].mwa-gm-editing,
+>      [data-gm-editable="comment"] [data-gm-field="commenttext"].mwa-gm-editing {
+>          display: block; width: 100%; box-sizing: border-box; }
+>      [...commentlabel].mwa-gm-editing { margin-bottom: .6rem; }
+>      [...commenttext].mwa-gm-editing  { min-height: 2.6rem; }
+>      ```
+>      (el título pasa de caja a ancho de contenido a **a ancho completo**, alineado
+>      con el cuerpo, con .6rem de aire entre ambos).
+> 3. **`lang/{es,en,pt_br}`:** `gradesmail_preview_delete` ("Eliminar mensaje" /
+>    "Delete message" / "Excluir mensagem"), `gradesmail_comment_delete_title`,
+>    `gradesmail_comment_delete_body` (3 idiomas ×2).
+> 4. **`enviarnotas.php`:** `$gmkeys` += `preview_delete`, `comment_delete_title`,
+>    `comment_delete_body`.
+> 5. **`amd/build/enviarnotas.min.js`:** regenerado (terser 5.51.2, `--compress
+>    --mangle`); `node --check` OK ×2 (src + min); markers min: `mwaGmPreviewDelete`
+>    ×2, `mwa-gm-btn-del` ×1, `preview_delete` ×1, `comment_delete_title` ×1,
+>    regresiones `commentlabel` ×8 / `data-gm-editable` ×2.
+> 6. **`version.php`:** 2026102802 → **2026102803**. `php -l` OK (enviarnotas,
+>    version, lang ×3).
+> 7. **Tests:** no se añade PHPUnit (cambio 100% de UI; el contrato "vacio = sin
+>    sección" ya es del servidor y está cubierto por `test_send_includes_teacher_comment`
+>    y `test_comment_label_editable_default_and_custom`, que asierten el ancla y el
+>    default).
+>
+> ### T8.1.2 Deploy (procedimiento probado `_depl71`/`_inner10`) — ✅ VERIFICADO 28-oct (2ª sesión)
+>
+> - [x] Staging `_stage2803_block_mwa_dashboard` (robocopy `block_mwa_dashboard/`,
+>       **109 archivos**, sin `.git`) → `scp` → host `/tmp/_stage2803_…`.
+> - [x] `_depl72.sh` + `_inner11.sh`: **PRE_OK** → **BACKUP_OK**
+>       (`mwa_dashboard.bak.2026102803` conserva v2026102802) → **SWAP_OK** →
+>       `purge_caches` → **`++ 2026102803: Éxito`** → DB **`version=2026102803 |
+>       WS=20`** → restart **`Up 12s (healthy)`** → HTTP root **200**,
+>       `enviarnotas.php?course=2/4` **200/303** → markers LIVE:
+>       `mwaGmPreviewDelete` ×2 (PRE contable; H6 muestra `x1` por `grep -c`
+>       de línea, misma quirk que `_depl71`) · `mwa-gm-btn-del` en min y en
+>       `styles/gradesmail.css` (regla `min-height: 2.6rem` OK) ·
+>       `preview_delete` + `comment_delete_title` en min y en `enviarnotas.php`
+>       (`$gmkeys`) · `gradesmail_preview_delete` + `comment_delete_body` en
+>       lang ×3 · regresiones `commentlabel` / `mwaGmPreviewEdit` /
+>       `act_hidden_tag` OK · banner live **203507 bytes** (= la compacta, no
+>       regresó a 730 KB).
+> - [x] LECCIONES nuevas (28-oct 2ª sesión):
+>   1. **`grep -c` cuenta LÍNEAS, no OCURRENCIAS** → en el min de 1 línea
+>      `grep -c "marker"` = 1 aunque el marker exista ×2. Para contar
+>      ocurrenciones: `grep -o "marker" | wc -l` (el PRE de `_inner11` lo usa
+>      bien; los H6 de T8 heredaron la imprecisión).
+>   2. **Sticky-bit de `/tmp` del contenedor (reconfirmado):** `docker cp` crea
+>      el staging dir como root → el `rm -rf` del paso H2 falla para uid 1001
+>      ("Operation not permitted"). Limpieza con `docker exec -u root`
+>      (mismo remedio que el del 27-oct; corregido en `_depl72.sh`).
+>   3. **Fallo de PRE = 0 daño a producción:** el primer intento falló en PRE
+>      (antes de BACKUP/SWAP) → live intacta en 2026102802; el "RESTORE
+>      ORQUESTADOR" no hizo nada (no había backup aún). La doble verificación
+>      PRE/restore sigue salvando.
+>
+> ### T8.1.3 Aceptación (usuario, navegador)
+>
+> - [ ] Preview → "Editar": los dos campos van **alineados al ancho completo**
+>       y **con separación** entre ellos (captura anterior: caja del título corta
+>       y pegada a la del cuerpo).
+> - [ ] Con mensaje escrito aparece el botón **"Eliminar mensaje"** al lado de
+>       "Editar"; al confirmarlo el mensaje **desaparece de la preview** (y el
+>       envío real llega **sin la sección**, WYSIWYG).
+> - [ ] Con el mensaje eliminado y en modo "Editar" de nuevo, el área vuelve a
+>       poder escribirse (ancla inyectada vacía, título por defecto).
+> - [ ] 1 envío real SÍ con mensaje, y 1 SIN (después de "Eliminar mensaje") —
+>       ambos con auditoría `status=ok`.
+> - [ ] Push `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
 
 ---
 

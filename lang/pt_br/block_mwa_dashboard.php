@@ -2219,6 +2219,10 @@ $string['gradesmail_error_generic'] = 'A requisição falhou. Tente novamente.';
 $string['gradesmail_preview_edit'] = 'Editar';
 $string['gradesmail_preview_done'] = 'Concluído';
 $string['gradesmail_preview_chips_hint'] = 'Clique em um nome para ver o e-mail daquele estudante';
+// T8.1 (28-oct): "Excluir mensagem" — remover a mensagem do docente do e-mail.
+$string['gradesmail_preview_delete'] = 'Excluir mensagem';
+$string['gradesmail_comment_delete_title'] = 'Excluir a mensagem do docente?';
+$string['gradesmail_comment_delete_body'] = 'A mensagem e o título saem do e-mail (os estudantes receberão sem essa seção). Você poderá escrevê-la novamente com «Editar».';
 // Gestão do histórico (T3b): excluir por linha + limpar tudo.
 $string['gradesmail_hist_del_title'] = 'Excluir este registro?';
 $string['gradesmail_hist_del_body'] = 'Isto remove o registro de envio de notas deste estudante. Esta ação não pode ser desfeita.';

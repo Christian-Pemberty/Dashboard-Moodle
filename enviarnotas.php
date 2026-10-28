@@ -63,6 +63,8 @@ $gmkeys = [
     'confirm_cancel', 'alert_noselection', 'error_title',
     // Preview editor (plan T1) + student chips (plan T3a).
     'preview_edit', 'preview_done', 'preview_chips_hint', 'email_commentlabel',
+    // T8.1: "Delete message" button + confirmation (message not sent at all).
+    'preview_delete', 'comment_delete_title', 'comment_delete_body',
     // History management (plan T3b): row delete + clear all.
     'hist_del_title', 'hist_del_body', 'hist_del_row',
     'hist_clear', 'hist_clear_title', 'hist_clear_body', 'hist_clear_done',

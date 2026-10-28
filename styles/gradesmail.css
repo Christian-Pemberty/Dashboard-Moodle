@@ -90,6 +90,18 @@
     background: #0b5ed7;
 }
 
+/* T8.1: "Eliminar mensaje" — destructive but secondary (not the blue primary). */
+.mwa-gm-btn-del {
+    background: #fff;
+    border-color: #e5c6c6;
+    color: #b02a37;
+}
+
+.mwa-gm-btn-del:hover:not(:disabled) {
+    border-color: #e5a9a9;
+    background: #fdf1f1;
+}
+
 .mwa-gm-btn-sec {
     background: #fff;
     border-color: #cbd5e1;
@@ -510,6 +522,25 @@
 .mwa-gm-editing:focus {
     border-color: #2f7fd6;
     background: #eef6ff;
+}
+
+/* ── T8.1 (28-oct, pedido del usuario): en modo edición los dos campos
+   (título y texto del mensaje) alineados al ancho completo de la vista
+   previa y con algo de aire entre ellos. Solo afecta la preview in-app:
+   el correo sigue usando los estilos inline email-safe del servidor. ── */
+[data-gm-editable="comment"] [data-gm-field="commentlabel"].mwa-gm-editing,
+[data-gm-editable="comment"] [data-gm-field="commenttext"].mwa-gm-editing {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+[data-gm-editable="comment"] [data-gm-field="commentlabel"].mwa-gm-editing {
+    margin-bottom: .6rem;
+}
+
+[data-gm-editable="comment"] [data-gm-field="commenttext"].mwa-gm-editing {
+    min-height: 2.6rem;
 }
 
 /* ── Plan T3a: selected-student chips inside the preview card ────────────── */
