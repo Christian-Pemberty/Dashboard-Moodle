@@ -1066,6 +1066,85 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 
 ---
 
+## T8.2 — "Eliminar mensaje" aparece al confirmar con "Listo" (NUEVA, 28-oct sesión 3)
+
+> **Pedido (usuario, verbatim 28-oct):**
+> "podemos hacer que el boton Eliminar mensaje aparesca una ves el profe le de
+> listo ya que esta apareciendo cuando se le da de nuevo vista previa esta bien
+> pero cuando confirme debe mostrarlo no? recuerda ir actualizando el plan y
+> anotando lo importante… y luego actualizamos el que esta acá en local para
+> irlo subiendo al repositorio."
+>
+> **Diagnóstico:** el botón `#mwaGmPreviewDelete` solo se refrescaba en
+> `paintPreview()` (re-clic en "Vista previa") y en `deleteCommentMessage()`.
+> En el flujo "Editar → escribir mensaje → **Listo**", la rama de salida de
+> `toggleCommentEdit()` sincronizaba el texto a `commentValue` **pero nunca
+> llamaba a `refreshPreviewDeleteBtn()`** → el mensaje recién escrito se
+> quedaba SIN su botón "Eliminar mensaje" hasta pedir otra vez "Vista previa".
+>
+> **DECISIÓN (aplicada, v2026102804):**
+> - En la rama de salida de `toggleCommentEdit()` ("Listo"): tras
+>   `syncCommentFromEditor()`, si el mensaje quedó vacio se **quita el ancla**
+>   residual (WYSIWYG: el servidor omite la sección cuando `comment` está
+>   vacio, misma regla que `paintPreview`) y se llama a
+>   `refreshPreviewDeleteBtn()`.
+> - **Resultado:** tras "Listo", si hay mensaje → "Eliminar mensaje" aparece
+>   **al instante**; si el mensaje quedó vacio → la sección desaparece de la
+>   preview y el botón se oculta. Cero cambios de servidor/lang/CSS: el
+>   contrato "vacio = sin sección" ya era de T8.
+>
+> ### T8.2.1 Cambios (v2026102804)
+>
+> 1. **`amd/src/enviarnotas.js`:** solo la rama "Listo" de `toggleCommentEdit()`
+>    (quitar ancla si quedó vacio + `refreshPreviewDeleteBtn()`). Cero backend/WS.
+> 2. **`amd/build/enviarnotas.min.js`:** regenerado (terser 5.51.2, `--compress
+>    --mangle`); `node --check` OK ×2 (src + min); **fingerprint MD5 nuevo
+>    `2bb331c2ad0afcde918a0c9fa5229f32`** (T8.1 era `0e2e38af9b5ba3d3c9d4076016338dfa`);
+>    markers de regresión IGUALES (mwaGmPreviewDelete ×2, mwa-gm-btn-del ×1,
+>    preview_delete ×1, commentlabel ×8, data-gm-editable ×2, act_hidden_tag ×1);
+>    `.remove()` ×3 en el min (×2 en T8.1 — el cambio no añade strings, añade
+>    1 llamada a funciones ya existentes → **el MD5 es el marker eficaz**).
+> 3. **`version.php`:** 2026102803 → **2026102804**. `php -l` OK.
+> 4. **Tests:** sin PHPUnit nuevo (cambio 100% UI; el contrato "vacio = sin
+>    sección" vive en el servidor y ya lo cubren los tests T8).
+>
+> ### T8.2.2 Deploy (procedimiento probado, scripts `_depl73` + `_inner12`) — ✅ VERIFICADO 28-oct (3ª sesión)
+>
+> - [x] Staging `_stage2804_block_mwa_dashboard` (**109 archivos**, sin
+>       `stage*` anidado). ⚠️ Subida por zip + plink stdin (esta máquina NO
+>       tiene scp/pscp disponibles — ver lecciones): **el zip hecho con
+>       `Compress-Archive` (PS) escribe entradas con BARRAS INVERTIDAS** y en
+>       Linux se descomprime como 109 archivos "planos" (`amd\build\x.min.js`)
+>       → corregido con zip de Python `zipfile` (slashes) + SHA256 ambos
+>       lados (`4b1542f8…`) + md5 del min en host.
+> - [x] `_depl73.sh` + `_inner12.sh` (PRE ahora con **fingerprint MD5 del min**
+>       en staging, SWAP con verificación post-swap, y backup que confirma el
+>       MD5 T8.1): **PRE_OK** → **BACKUP_OK** (`mwa_dashboard.bak.2026102804`
+>       conserva v2026102803, min md5 = build T8.1) → **SWAP_OK** (live =
+>       2026102804, min md5 = fingerprint) → `purge_caches` →
+>       **`++ 2026102804: Éxito`** → DB **`version=2026102804 | WS=20`** →
+>       restart **`Up 12s (healthy)`** → HTTP root **200**,
+>       `enviarnotas.php?course=2/4` **200/303** → markers LIVE:
+>       **min md5 = fingerprint T8.2 EN VIVO**, mwaGmPreviewDelete ×2,
+>       mwa-gm-btn-del, css reglas edición T8.1, `enviarnotas.php` ($gmkeys),
+>       lang ×3, regresiones T8/T7 (`commentlabel`/`mwaGmPreviewEdit`/
+>       `act_hidden_tag`/external) OK, **banner live 203507 bytes**.
+> - [x] Rollback 1 comando: `mwa_dashboard.bak.2026102804` (v2026102803).
+>
+> ### T8.2.3 Aceptación (usuario, navegador)
+>
+> - [ ] Preview → "Editar" → escribir mensaje → **"Listo"**: aparece el botón
+>       **"Eliminar mensaje" al instante** (antes: solo al presionar otra vez
+>       "Vista previa").
+> - [ ] Preview → "Editar" → escribir y luego borrar el texto → **"Listo"**:
+>       la sección desaparece de la preview (WYSIWYG: vacio = no se envía) y el
+>       botón queda oculto.
+> - [ ] "Eliminar mensaje" → confirmar → el mensaje sale de la preview y del
+>       correo (1 envío real sin la sección, auditoría `status=ok`).
+> - [ ] Push `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
+
+---
+
 ## Cierre / riesgo (mantener)
 
 - **Estado de datos curso 4 (27-oct, T5):** los 4 ítems `mod=quiz` están ocultos

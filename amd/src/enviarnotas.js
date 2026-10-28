@@ -727,6 +727,18 @@ define(['core/ajax'], function(Ajax) {
                 els.previewEdit.textContent = t('preview_edit');
             }
             syncCommentFromEditor();
+            // T8.2: "Listo" (confirm the edit) must show/hide "Eliminar
+            // mensaje" at once. Before T8.2 the button was only refreshed on
+            // the NEXT "Vista previa" (paintPreview -> refreshPreviewDeleteBtn),
+            // so a message written in this round stayed without its delete
+            // button until the preview was requested again.
+            if (((commentValue || '').trim() === '') && previewAnchor() !== null) {
+                // Left empty while editing: the server drops the whole section
+                // when `comment` is empty, so the preview must too (same rule
+                // as paintPreview, WYSIWYG: what you see is what will be sent).
+                previewAnchor().remove();
+            }
+            refreshPreviewDeleteBtn();
             return;
         }
         var anchor = previewAnchor() || injectCommentAnchor();
