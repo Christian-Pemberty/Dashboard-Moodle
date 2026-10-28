@@ -30,12 +30,19 @@
 > **desplegada y 100% VERIFICADA en vivo** (`_diag56.sh`, 2ª sesión 27-oct: version 2026102701,
 > WS=20, todos los markers, 3 langs, HTTP 200/303, restart OK). Ver §T5 y diario §7 + §8.
 >
-> 🔵 **FASE ACTUAL (27-oct, en progreso, corte por tokens): T6 — "Enviar notas" con
-> ítems ocultos en la libreta (curso 4).** DECISIÓN USUARIO: cambiar el plugin → los
-> ítems `hidden=1` quedan SELECCIONABLES en "Enviar notas" (marcados "(oculta)") y el
-> docente puede verlos / previsualizarlos / enviarlos SIN desocultar la libreta.
-> Diseño completo en §T6; trabajo a medias (solo la firma de `api::get_grades`).
-> Ver §T6 y diario §8.
+> ✅ **FASE CERRADA (27-oct): T6 — "Enviar notas" con ítems ocultos en la libreta
+> (curso 4).** DECISIÓN USUARIO: cambiar el plugin → ítems `hidden=1`
+> SELECCIONABLES en "Enviar notas" (marcados "(oculta)") y el docente los ve /
+> previsualiza / envía SIN desocultar la libreta. Código + deploy v2026102702
+> verificados en vivo (§T6); pendiente SOLO la aceptación del usuario en
+> navegador (curso 4) + push a `main`.
+>
+> 🔵 **FASE ACTUAL (27-oct, sesión 4): T7 — Banner institucional en el correo de
+> notas.** El usuario pasó 2 capturas (sin banner vs cómo quiere llegar) y el
+> archivo `Banner/Banner.png` (1471×285, 730 KB). Diseño + estado en §T7.
+> **Evidencia (sesión 4):** el usuario adjuntó el correo REAL recibido en su bandeja
+> (Gmail/Outlook) → **T4 queda de hecho aceptada** (canal vía B entrega en bandeja;
+> remitente `soporte.cursosvirtuales@`; tabla bordes/nota coloreada).
 > **Flujo de trabajo recordado por el usuario:** la verdad de origen está en el server
 > (Moodle **5.0.1** en 192.168.25.4, contenedor `moodle_app`); lo local
 > (`block_mwa_dashboard/`) se mantiene al día para subir al repo
@@ -597,6 +604,90 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 - [ ] Push GitHub `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
 
 ---
+
+## T7 — Banner institucional en el correo de notas (NUEVA, 27-oct sesión 4)
+
+> **Pedida del usuario (27-oct):** "¿es posible hacer que los mensajes salgan con un
+> banner?" + 2 capturas: (a) el correo tal como llega hoy (sin banner), (b) cómo
+> quiere llegarlo: banner institucional Uniclaritiana **sobre el saludo**, ancho
+> completo, con su franja amarilla. "Yo ya lo tengo listo" → el usuario
+> proporcionó el archivo: `block_mwa_dashboard/Banner/Banner.png`
+> (**1471×285 px, RGBA, 730 KB**, esquinas mínimamente transparentes → PNG,
+> no JPG).
+
+### 7.1 Diseño
+- **Archivo:** el banner vive en **`pix/banner.png`** del plugin (mover
+  `Banner/Banner.png` → `pix/banner.png`; `Banner/` eliminado). Las `pix/` de un
+  bloque Moodle son **públicas sin login** (verificado en vivo 27-oct:
+  `logo.png` y `enviando-email.gif` → HTTP 200 sin sesión; `banner.png` era 404
+  antes del deploy) → los clientes de correo (Gmail/Outlook, sin sesión) la
+  cargan bien.
+- **Render (email-safe):** al inicio del cuerpo de `build_grades_mail()`,
+  **antes del saludo**, un `<img>` inline (sin CSS, sin `<style>`):
+  - attributes: `width="600"` (motor Word/Outlook desktop usa el attr)
+  - style: `display:block;width:100%;max-width:600px;height:auto;margin:0 0 16px;border:0;`
+  - `alt` = cadena `gradesmail_banner_alt` (por idioma).
+  - **WYSIWYG garantizado:** preview (`get_grades_mail_preview`) y envío
+    (`build_grades_mail`) comparten la misma función → el docente ve EXACTAMENTE
+    lo que se envía. El plain-text deriva de ese HTML (`html_to_text`) → no
+    regresa a ser dominante.
+- **Configuración (admin):** `settings.php` → `admin_setting_configtext
+  block_mwa_dashboard/gradesmail_banner` (PARAM_URL, default vacío):
+  - **vacío** → usa `pix/banner.png` del plugin (URL resuelta con
+    `\moodle_url` → siempre la wwwroot real: `https://medicionra.
+    uniclaretiana.edu.co/blocks/mwa_dashboard/pix/banner.png`);
+  - **URL pública** → se usa tal cual (campaños/estacionales);
+  - **literal `none`** → correo sin banner.
+- **Cadenas (en/es/pt_br):** `gradesmail_banner_alt`,
+  `settings_gradesmail_banner`, `settings_gradesmail_banner_desc`.
+- **Tests (2 nuevos, `tests/send_grades_mail_test.php`):**
+  - `test_mail_html_includes_banner_by_default` (banner presente, inline
+    `max-width:600px;height:auto`, sin `<style>`, POSICIÓN sobre el saludo).
+  - `test_mail_banner_setting_override_and_disable` (URL custom se respeta;
+    `none` → cero `<img>` en el correo).
+
+### 7.2 Código tocado (v2026102703)
+1. `pix/banner.png` (nuevo, 730 KB) + `Banner/` eliminado.
+2. `classes/external.php` → `build_grades_mail()`: bloque banner (T7) antes del
+   saludo (get_config + `\moodle_url` + `<img>` inline).
+3. `settings.php` → `admin_setting_configtext gradesmail_banner`.
+4. `lang/{en,es,pt_br}` → 3 cadenas nuevas (alt + nombre/desc de la setting).
+5. `tests/send_grades_mail_test.php` → 2 tests T7.
+6. `version.php` → **2026102703**.
+7. `php -l` OK en los 7 PHP tocados (local, PHP 8.3.30 Laragon).
+8. **AMD: sin cambios** (sin JS nuevo → no se regenera el min).
+
+### 7.3 Deploy + verificación (procedimiento probado `_depl56`/`_inner7`) — ✅ HECHO (27-oct sesión 4)
+- [x] Staging `_stage2703_block_mwa_dashboard` (robocopy, **109 archivos con `pix/banner.png`**)
+      → `scp` → host `/tmp/_stage2703_block_mwa_dashboard`.
+- [x] `_depl57.sh` + `_inner8.sh` (orquestador **ejecutado como archivo**, `</dev/null`):
+      PRE_OK → **BACKUP_OK** (`mwa_dashboard.bak.2026102703` conserva v2026102702) →
+      SWAP_OK (version 2026102703 + `pix/banner.png` presente) → `purge_caches` →
+      **`++ 2026102703: Éxito`** → `Nueva configuración: block_mwa_dashboard/
+      gradesmail_banner` (la setting se registro sola en upgrade) → DB **con la
+      query de fila correcta**: `version=2026102703 | WS=20`.
+- [x] Restart `moodle_app` healthy + smoke HTTP: root **200**, course 2 **303**.
+- [x] **Verificación pública del banner:** `curl .../blocks/mwa_dashboard/pix/banner.png`
+      → **200** (sin login; pre-deploy era 404, post 200 con 730767 bytes).
+- [x] Markers LIVE: `gradesmail_banner` (external + settings + lang ×3) +
+      `pix/banner.png` (external + en live `pix/`) + version 2026102703.
+- [~] **Check funcional CLI** (preview HTML con banner ANTES del saludo):
+      **no corrió** (el usuario se fue); receta lista para la próxima sesión
+      (como admin, curso 2, `get_grades_mail_preview`).
+
+### 7.4 Aceptación T7 (usuario)
+- [ ] Preview in-app (enviarnotas): el banner aparece ENCIMA del saludo,
+      ancho completo, aspecto igual a su captura objetivo.
+- [ ] **1 envío real** → en la bandeja (Gmail/Outlook) el correo llega **igual**
+      que la preview (con banner, tabla bordes, nota coloreada) + auditoría
+      `status=ok`.
+- [ ] (Opcional) cambiar la setting a `none` → correo sin banner; a URL custom →
+      esa imagen (solo si se desea probar; default = `pix/banner.png`).
+- [ ] Push `main` de GitHub (repo `Christian-Pemberty/Dashboard-Moodle`).
+
+---
+
+## Cierre / riesgo (mantener)
 
 - **Estado de datos curso 4 (27-oct, T5):** los 4 ítems `mod=quiz` están ocultos
   (`hidden=1`) en la libreta → el plugin (correctamente) no los publica ni ofrece

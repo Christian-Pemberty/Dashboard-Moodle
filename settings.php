@@ -36,6 +36,18 @@ if ($ADMIN->fulltree) {
         get_string('settings_general_heading_desc', 'block_mwa_dashboard')
     ));
 
+    // T7: institutional banner shown above the greeting in the grades email.
+    // Must be a PUBLIC image URL (recipients load it without logging in).
+    // Empty (default) = the plugin's own pix/banner.png; the literal word
+    // "none" disables the banner entirely.
+    $settings->add(new admin_setting_configtext(
+        'block_mwa_dashboard/gradesmail_banner',
+        get_string('settings_gradesmail_banner', 'block_mwa_dashboard'),
+        get_string('settings_gradesmail_banner_desc', 'block_mwa_dashboard'),
+        '',
+        PARAM_URL
+    ));
+
     $settings->add(new admin_setting_description(
         'block_mwa_dashboard/admin_page_link',
         get_string('settings_admin_page', 'block_mwa_dashboard'),

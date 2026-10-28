@@ -880,6 +880,27 @@ class external extends \external_api {
         $bodyhtml = \html_writer::start_tag('div', [
             'style' => 'margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2937;',
         ]);
+
+        // T7: institutional banner above the greeting. Email-safe <img> with
+        // inline sizing only (no CSS, no <style>): width attribute for the
+        // Outlook/Word engine, max-width+height:auto for web clients.
+        // Source: admin setting 'gradesmail_banner' (public URL; empty = the
+        // plugin's own pix/banner.png, public by design). The literal word
+        // 'none' disables the banner. WYSIWYG: preview and send share this
+        // function, so the teacher sees exactly what is sent.
+        $bannersrc = trim((string) get_config('block_mwa_dashboard', 'gradesmail_banner'));
+        if ($bannersrc === '') {
+            $bannersrc = (new \moodle_url('/blocks/mwa_dashboard/pix/banner.png'))->out(false);
+        }
+        if ($bannersrc !== 'none') {
+            $bodyhtml .= \html_writer::tag('img', '', [
+                'src'   => $bannersrc,
+                'alt'   => s(get_string('gradesmail_banner_alt', 'block_mwa_dashboard')),
+                'width' => '600',
+                'style' => 'display:block;width:100%;max-width:600px;height:auto;margin:0 0 16px;border:0;',
+            ]);
+        }
+
         $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_hi', 'block_mwa_dashboard', ['name' => $fullname])),
             ['style' => 'margin:0 0 12px;']);
         $bodyhtml .= \html_writer::tag('p', s(get_string('gradesmail_email_intro', 'block_mwa_dashboard',

@@ -621,4 +621,65 @@ final class send_grades_mail_test extends \advanced_testcase {
         // And the pedagogical intervention is still there.
         $this->assertNotFalse($DB->get_record('block_mwa_dashboard_messages', ['id' => $intervid], 'id', IGNORE_MISSING));
     }
+
+    // ---- T7 — institutional banner above the greeting -----------------------
+
+    /**
+     * The grades email HTML opens with the institutional banner (WYSIWYG for
+     * preview and send): an email-safe <img> with inline sizing, placed ABOVE
+     * the greeting. Default source is the plugin's public pix/banner.png.
+     */
+    public function test_mail_html_includes_banner_by_default(): void {
+        $this->resetAfterTest(true);
+        set_config('block_mwa_dashboard', 'gradesmail_banner', '');
+
+        $course  = $this->getDataGenerator()->create_course();
+        $ana     = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5);
+
+        $html = \block_mwa_dashboard\external::get_grades_mail_preview($course->id, $ana->id, 0, '')['html'];
+
+        // Banner image is present and email-safe (inline sizing, no CSS link).
+        $this->assertStringContainsString('/blocks/mwa_dashboard/pix/banner.png', $html);
+        $this->assertStringContainsString('max-width:600px;height:auto', $html);
+        $this->assertStringNotContainsString('<style>', $html);
+
+        // The banner must be the first block: above the greeting.
+        $bannerpos = strpos($html, 'pix/banner.png');
+        $greeting  = strpos($html, get_string('gradesmail_email_hi', 'block_mwa_dashboard'));
+        $this->assertNotFalse($bannerpos, 'The banner img must exist');
+        $this->assertNotFalse($greeting, 'The greeting must exist');
+        $this->assertLessThan($greeting, $bannerpos, 'The banner must be above the greeting');
+    }
+
+    /**
+     * The admin setting controls the banner: a custom public URL is used as-is,
+     * and the literal word 'none' removes the banner from the email.
+     */
+    public function test_mail_banner_setting_override_and_disable(): void {
+        $this->resetAfterTest(true);
+
+        $course  = $this->getDataGenerator()->create_course();
+        $ana     = $this->enrol_user_in_course($course, 'student', 'Ana', 'Alumna');
+        $teacher = $this->enrol_user_in_course($course, 'editingteacher', 'Tito', 'Docente');
+        $this->setUser($teacher);
+
+        $this->create_graded_assign($course, $ana, 8.5);
+
+        // 1) Custom URL is used verbatim.
+        set_config('block_mwa_dashboard', 'gradesmail_banner', 'https://www.example.edu.co/banner-20anos.png');
+        $html = \block_mwa_dashboard\external::get_grades_mail_preview($course->id, $ana->id, 0, '')['html'];
+        $this->assertStringContainsString('https://www.example.edu.co/banner-20anos.png', $html);
+
+        // 2) The literal word 'none' disables the banner completely.
+        set_config('block_mwa_dashboard', 'gradesmail_banner', 'none');
+        $html = \block_mwa_dashboard\external::get_grades_mail_preview($course->id, $ana->id, 0, '')['html'];
+        $this->assertStringNotContainsString('pix/banner.png', $html);
+        $this->assertStringNotContainsString('<img', $html, 'With "none" there must be no image at all');
+        // The greeting must still open the body.
+        $this->assertStringContainsString(get_string('gradesmail_email_hi', 'block_mwa_dashboard'), $html);
+    }
 }

@@ -2137,6 +2137,9 @@ $string['gradesmail_email_grade'] = 'Grade';
 $string['gradesmail_email_pending'] = 'Pending';
 $string['gradesmail_email_commentlabel'] = 'A message from your teacher';
 $string['gradesmail_email_footer'] = 'This is an automatic message sent by your teacher through the course platform. Please do not reply to this email.';
+$string['gradesmail_banner_alt'] = 'Uniclaritiana - Foundation University';
+$string['settings_gradesmail_banner'] = 'Grades email banner';
+$string['settings_gradesmail_banner_desc'] = 'Public URL of the image shown at the top of the grades email, above the greeting. Leave empty to use the plugin banner (pix/banner.png). Set the value to the word "none" to send the email without a banner. The URL must be publicly reachable: email recipients load the image without logging in.';
 $string['gradesmail_error_nonestudent'] = 'Select at least one student before sending.';
 // Grades notification - UI (student list, preview, send, results).
 $string['gradesmail_button'] = 'Send grades';

@@ -34,6 +34,9 @@ $string['gradesmail_email_grade'] = 'Nota';
 $string['gradesmail_email_pending'] = 'Pendiente';
 $string['gradesmail_email_commentlabel'] = 'Un mensaje de tu docente';
 $string['gradesmail_email_footer'] = 'Este es un mensaje automático enviado por tu docente a través de la plataforma del curso. Por favor, no respondas a este correo.';
+$string['gradesmail_banner_alt'] = 'Uniclaritiana – Fundación Universitaria Claretiana';
+$string['settings_gradesmail_banner'] = 'Banner del correo de notas';
+$string['settings_gradesmail_banner_desc'] = 'URL pública de la imagen que se muestra al inicio del correo de notas, sobre el saludo. Déjalo vacío para usar el banner del plugin (pix/banner.png). Escribe la palabra "none" para enviar el correo sin banner. La URL debe ser accesible públicamente: los destinatarios cargan la imagen sin iniciar sesión.';
 $string['gradesmail_error_nonestudent'] = 'Selecciona al menos un estudiante antes de enviar.';
 // Grades notification - UI (student list, preview, send, results).
 $string['gradesmail_button'] = 'Enviar notas';
