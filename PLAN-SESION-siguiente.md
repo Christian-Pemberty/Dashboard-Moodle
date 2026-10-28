@@ -1141,7 +1141,11 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 >       botón queda oculto.
 > - [ ] "Eliminar mensaje" → confirmar → el mensaje sale de la preview y del
 >       correo (1 envío real sin la sección, auditoría `status=ok`).
-> - [ ] Push `main` (repo `Christian-Pemberty/Dashboard-Moodle`).
+> - [x] Push `main` (repo `Christian-Pemberty/Dashboard-Moodle`):
+>       **`84d8fed..e9eec2d`** (verificado `ls-remote origin main =
+>       e9eec2d004bf0d92d23a0e7a2fb464e005bf1b7a`). Nota: el commit T8.1
+>       `84d8fed` YA estaba en origin al iniciar la sesión (verificado
+>       `ls-remote`); lo pendiente fue solo este push de T8.2.
 
 ---
 
