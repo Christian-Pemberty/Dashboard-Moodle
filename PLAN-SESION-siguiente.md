@@ -97,8 +97,9 @@
 >    (título vacío en la edición = vuelve al default);
 >    (c) 1 envío real (canal Vía B OK) con el mensaje abajo de la tabla, remitente
 >    "SOPORTE CURSOS VIRTUALES" (sin "DE") y auditoría `status=ok`.
-> 4. **🔵 PUSH `main`** → repo `Christian-Pemberty/Dashboard-Moodle` (este commit
->    lleva código T8 + banner optimizado + relay T8 + plan/diario).
+> 4. **PUSH `main` — ✅ HECHO 28-oct:** commit **`864bf8d`** (13 archivos: código T8
+>    + banner optimizado + relay T8 + plan/diario) → `origin/main =
+>    864bf8db3c8f9e4f22faf1d113e669563f2a6498` (verificado `ls-remote`).
 >
 > **ACCESSOS (sesión de trabajo, no versionar):** server 192.168.25.4
 > (user `proyectosmym`, ssh OK); Moodle **5.0.1**; host contenedor `moodle_app`
