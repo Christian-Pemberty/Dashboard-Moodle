@@ -882,8 +882,14 @@ class external extends \external_api {
         ]);
 
         // T7: institutional banner above the greeting. Email-safe <img> with
-        // inline sizing only (no CSS, no <style>): width attribute for the
-        // Outlook/Word engine, max-width+height:auto for web clients.
+        // inline sizing only (no CSS, no <style>).
+        // T7.1 (28-oct, user request "ancho completo y responsivo"): the
+        // banner must SPAN the full content width, equal to the 100% grades
+        // table — no max-width cap. `width:100%;height:auto` applies in every
+        // web client (Gmail, Outlook web, Apple) and in the in-app preview;
+        // the width="600" ATTRIBUTE is kept only as a fallback for the
+        // Outlook-desktop (Word) engine, which ignores percentage widths and
+        // would otherwise render the 1471px source image at natural size.
         // Source: admin setting 'gradesmail_banner' (public URL; empty = the
         // plugin's own pix/banner.png, public by design). The literal word
         // 'none' disables the banner. WYSIWYG: preview and send share this
@@ -897,7 +903,7 @@ class external extends \external_api {
                 'src'   => $bannersrc,
                 'alt'   => s(get_string('gradesmail_banner_alt', 'block_mwa_dashboard')),
                 'width' => '600',
-                'style' => 'display:block;width:100%;max-width:600px;height:auto;margin:0 0 16px;border:0;',
+                'style' => 'display:block;width:100%;height:auto;margin:0 0 16px;border:0;',
             ]);
         }
 
@@ -1034,7 +1040,9 @@ class external extends \external_api {
         // y lo restauramos al salir. NO usar core\session\manager::set_user(): en este
         // core llama a sesskey() y rota el sesskey de la WS siguiente.
         $originaluser   = $USER;
-        $originaluserid = $SESSION ? $SESSION->userid : null;
+        // NOTE: in CLI/cron the session is a stdClass WITHOUT the `userid`
+        // property (probed 28-oct: PHP warning). Guard with !empty().
+        $originaluserid = ($SESSION && !empty($SESSION->userid)) ? $SESSION->userid : null;
         $USER           = $recipient;
         if ($SESSION) {
             $SESSION->userid = $recipient->id;

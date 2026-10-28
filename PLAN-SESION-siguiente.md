@@ -1,5 +1,21 @@
 # PLAN — Sesión siguiente: block_mwa_dashboard (envío de notas)
 
+> 🔵 **FE ACTUAL (28-oct-2026): T7.1 — Banner a ANCHO COMPLETO (responsivo).**
+> El usuario vio la preview (captura, 28-oct): el banner queda **más pequeño que la
+> tabla de notas**. Causa: el `<img>` lleva `max-width:600px` (decisión T7 para el
+> motor Word/Outlook) pero la tabla es `width=100%` → en preview/clientes web el
+> banner mide 600px y la tabla todo el ancho. **Decisión T7.1:** quitar `max-width:600px`
+> (queda `width:100%;height:auto`, mismo ancho que la tabla en TODOS los renderizados
+> web + preview) y **conservar el atributo `width="600"`** solo como fallback del motor
+> Word de Outlook desktop (ignora %: sin el attr renderizaría el original 1471px).
+> **✅ DEPLOY VERIFICADO 28-oct (v2026102801)** sobre T7: `upgrade ++ Éxito`, DB
+> `version=2026102801 | WS=20`, markers live (banner **sin `max-width:600px`**),
+> banner público 200 y **PROBE ALL PASS 6/6** (banner sobre saludo,
+> `width:100%;height:auto`, sin warnings PHP) + hotfix guard `$SESSION->userid`
+> (sha256 live=local `f7f8a02b…`). Commit A (`9a2b174`) = estado T7 (referencia del
+> deploy anterior). **PENDIENTE: aceptación del usuario (preview + envío real) y
+> push `main` (commit B).** Ver §T7.1.
+>
 > ✅ **ESTADO 27-oct-2026 (DESPLEGUE VERIFICADO):** despliegue N.º2
 > (`_depl27` + `_inner5`) **COMPLETADO y verificado en vivo** (verificación del
 > 27-oct, runner `_diag31.sh`):
@@ -684,6 +700,103 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 - [ ] (Opcional) cambiar la setting a `none` → correo sin banner; a URL custom →
       esa imagen (solo si se desea probar; default = `pix/banner.png`).
 - [ ] Push `main` de GitHub (repo `Christian-Pemberty/Dashboard-Moodle`).
+
+---
+
+## T7.1 — Banner a ANCHO COMPLETO / responsivo (NUEVA, 28-oct)
+
+> **Pedida del usuario (28-oct, con captura de la preview):** "hacer que el banner
+> abarque el ancho y que sea responsivo, porque queda más pequeño que la tabla de
+> notas". Evidencia (captura "Vista previa del correo"): el `<img>` del banner
+> mide ~600px pero la tabla ACT/NOTA ocupa todo el ancho de la tarjeta.
+> **Causa raíz:** el render T7 (plan §7.1) puso `max-width:600px` en el `style` del
+> `<img>` (conservadismo para Outlook) mientras la tabla usa `width="100%"` →
+> cualquier renderizado web (preview in-app, Gmail, Outlook web) muestra banner
+> 600px < tabla 100%.
+
+### 7.1.1 Decisión de diseño (28-oct)
+
+| Cliente | Comportamiento ANTES | Comportamiento DESPUÉS (T7.1) |
+|---|---|---|
+| Preview in-app | 600px (cap `max-width`) | **100%** del ancho de la tarjeta (igual que la tabla) |
+| Gmail / Outlook web / Apple Mail | 600px | **100%** del contenido (≈ el ancho de la tabla → idéntico) |
+| Outlook desktop (motor Word) | 600px (atributo `width`) | 600px (atributo `width="600"` **conservado**: el Word-engine ignora % y sin el attribute renderizaría el original 1471px → desborde) |
+
+- **Regla:** `style="display:block;width:100%;height:auto;margin:0 0 16px;border:0;"`
+  (el `max-width:600px` SALE del style); el atributo `width="600"` **se queda** solo
+  como fallback del motor Word. `height:auto` conserva la proporción (1471×285) →
+  responsivo en móvil también.
+- WYSIWYG intacto: preview y envío comparten `build_grades_mail()` → el docente ve
+  exactamente lo que llega. El plain-text no cambia (`html_to_text` sobre el mismo HTML).
+- **Settings (`gradesmail_banner`) sin tocar:** vacío=plugin (`pix/banner.png`),
+  URL pública=custom, `none`=sin banner — todas heredan el nuevo ancho automático.
+
+### 7.1.2 Código tocado (v2026102801) — ✅ LOCAL (28-oct)
+
+1. `classes/external.php` → `build_grades_mail()`: bloque banner — comentario actualizado
+   (T7.1 con justificación) + `style` sin `max-width:600px` (atributo `width="600"` queda).
+2. `tests/send_grades_mail_test.php` → `test_mail_html_includes_banner_by_default`:
+   assertion `max-width:600px;height:auto` → `style="display:block;width:100%;height:auto;
+   margin:0 0 16px;border:0;"` + `assertStringNotContainsString('max-width:600px')`.
+   (El test de override/`none` no asertaba el tamaño → no cambia.)
+3. `version.php` → **2026102703 → 2026102801** (convención del proyecto: bump +
+   `upgrade.php` en el deploy; también cache-buster de assets del plugin).
+4. `php -l` sobre `classes/external.php`, `tests/send_grades_mail_test.php`,
+   `version.php`.
+5. **Fix hallado por el probe (28-oct):** `get_grades_mail_preview()` L1043 —
+   `$SESSION->userid` sin property en contexto CLI → PHP warning (inocua en web,
+   ruido en logs/CLI). Guard: `($SESSION && !empty($SESSION->userid)) ? : null`.
+   Subido como hotfix de 1 archivo (`_hotfix28.sh`), sha256 live = local
+   (`f7f8a02b…`).
+6. **AMD / lang / settings: SIN cambios** (no hay cadenas ni JS new → no se regenera min).
+
+### 7.1.3 Git (estado local 28-oct)
+
+- Commit A `9a2b174` = **T7 tal como está en vivo** (estado 27-oct, v2026102703;
+  9 archivos incl. `pix/banner.png`) — referencia exacta del servidor anterior.
+- Commit B (T7.1) se hace **DESPUÉS** de verificar el deploy en vivo (patrón de siempre).
+
+### 7.1.4 Deploy + verificación (procedimiento `_depl57`/`_inner8` con staging `_stage2801`) — ✅ HECHO (28-oct)
+
+- [x] Staging `_stage2801_block_mwa_dashboard` (robocopy, 109 archivos, sin `.git`, sin
+      `stage*` anidado; version 2026102801; T7.1 style presente, sin `max-width:600px`)
+      → `scp` a host `/tmp` (nombre NEW) rc=0.
+- [x] `_depl58.sh` + `_inner9.sh` (orquestador `bash /tmp/_depl58.sh < /dev/null`, lección
+      6.7-1): **PRE_OK → BACKUP_OK** (`mwa_dashboard.bak.2026102801` conserva v2026102703
+      con `pix/banner.png`) → **SWAP_OK** → `purge_caches` →
+      **`++ 2026102801: Éxito (0,02 s)`** → DB `config_plugins version=2026102801 | WS=20`.
+- [x] Restart healthy (`Up 12s (healthy)`) + HTTP: root **200** · `enviarnotas.php?course=2`
+      **303** · `pix/banner.png` **200** (aún pública).
+- [x] Markers LIVE: `pix/banner.png` OK · `width:100%;height:auto` OK · **sin `max-width:600px`**
+      OK · settings + lang en/es/pt_br OK · `version.php = 2026102801`.
+- [x] **HOTFIX de 1 archivo (`_hotfix28.sh`):** guard `$SESSION->userid` (warning CLI, §7.1.2-5)
+      → sha256 live = local `f7f8a02b…` (post-hotfix, el staging local también se sincronizó).
+- [x] **CHECK FUNCIONAL CLI** (probe `_probe28b`, admin, curso 2, alumno uid 4 "Student One")
+      → **PROBE_ALL_PASS** (6/6): banner presente · style `width:100%;height:auto` · attr
+      `width="600"` · **sin `max-width:600px`** · `display:block` · banner ANTES del saludo;
+      **sin warnings PHP**. Evidencia (el `src` en CLI sale con la wwwroot interna; en web
+      es el dominio real):
+      ```html
+      <img src="…/blocks/mwa_dashboard/pix/banner.png" alt="Uniclaritiana – Fundación
+           Universitaria Claretiana" width="600"
+           style="display:block;width:100%;height:auto;margin:0 0 16px;border:0;">
+      ```
+- [x] Limpieza: probes borrados del contenedor con `-u root` (sticky-bit); host `/tmp`:
+      quedan `_stage2801…`, `_depl58.sh`, `_inner9.sh`, `_probe28*.php`, `_run28.sh`,
+      `_hotfix28.sh`, `_ext28_fix.php` (sticky-bit = no borrar como `proyectosmym`,
+      requiere `sudo rm` — ver §12.6).
+- [ ] **Pendiente:** aceptación del usuario §7.1.5 (preview + envío real) y push `main`
+      (ver §7.1.3/§7.1.5).
+
+### 7.1.5 Aceptación T7.1 (usuario, navegador)
+
+- [ ] Preview in-app (`enviarnotas.php?course=2`): el banner ahora tiene **el MISMO ancho
+      que la tabla** (tocando ambos bordes de la tarjeta), aspecto 1471×285 intacto.
+- [ ] **1 envío real** → en Gmail/Outlook web el banner llega **a todo el ancho del
+      contenido del correo**, igual que la tabla (WYSIWYG).
+- [ ] (Opcional) comprobar en Outlook desktop 365: banner a 600px fijo (fallback Word,
+      aceptado por diseño) — no regresa a 1471px desbordado.
+- [ ] Estado `T7` (§7.4) se cierra CON este (misma característica).
 
 ---
 

@@ -644,7 +644,11 @@ final class send_grades_mail_test extends \advanced_testcase {
 
         // Banner image is present and email-safe (inline sizing, no CSS link).
         $this->assertStringContainsString('/blocks/mwa_dashboard/pix/banner.png', $html);
-        $this->assertStringContainsString('max-width:600px;height:auto', $html);
+        // T7.1: full content width (same as the 100% grades table), responsive;
+        // no max-width cap anymore (the width="600" attribute is only the
+        // Outlook Word-engine fallback and is not asserted here).
+        $this->assertStringContainsString('style="display:block;width:100%;height:auto;margin:0 0 16px;border:0;"', $html);
+        $this->assertStringNotContainsString('max-width:600px', $html);
         $this->assertStringNotContainsString('<style>', $html);
 
         // The banner must be the first block: above the greeting.
