@@ -754,7 +754,8 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
 
 - Commit A `9a2b174` = **T7 tal como está en vivo** (estado 27-oct, v2026102703;
   9 archivos incl. `pix/banner.png`) — referencia exacta del servidor anterior.
-- Commit B (T7.1) se hace **DESPUÉS** de verificar el deploy en vivo (patrón de siempre).
+- Commit B `957bb32` (T7.1) ✅ HECHO 28-oct y **push `main`**: `97df4b5..957bb32`
+  (2 commits subidos: T7 + T7.1).
 
 ### 7.1.4 Deploy + verificación (procedimiento `_depl57`/`_inner8` con staging `_stage2801`) — ✅ HECHO (28-oct)
 
@@ -785,8 +786,8 @@ tachado → mostrar; o "Opciones de visualización" por actividad). Con `hidden=
       quedan `_stage2801…`, `_depl58.sh`, `_inner9.sh`, `_probe28*.php`, `_run28.sh`,
       `_hotfix28.sh`, `_ext28_fix.php` (sticky-bit = no borrar como `proyectosmym`,
       requiere `sudo rm` — ver §12.6).
-- [ ] **Pendiente:** aceptación del usuario §7.1.5 (preview + envío real) y push `main`
-      (ver §7.1.3/§7.1.5).
+- [x] Push `main` (28-oct, `97df4b5..957bb32`).
+- [ ] **Pendiente:** aceptación del usuario §7.1.5 (preview + envío real).
 
 ### 7.1.5 Aceptación T7.1 (usuario, navegador)
 
